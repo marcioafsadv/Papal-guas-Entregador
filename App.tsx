@@ -543,7 +543,8 @@ const App: React.FC = () => {
         </div>
 
         <div className="relative z-10 w-full max-w-sm flex flex-col items-center">
-          <div className="mb-12 scale-125">
+          {/* Logo corrected - No scale transform to avoid distortion */}
+          <div className="mb-8 w-full flex justify-center">
             <Logo size="lg" />
           </div>
 
