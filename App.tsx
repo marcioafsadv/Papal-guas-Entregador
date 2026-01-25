@@ -8,7 +8,7 @@ import { Logo } from './components/Logo';
 
 type Screen = 'HOME' | 'WALLET' | 'ORDERS' | 'SETTINGS' | 'WITHDRAWAL_REQUEST';
 type SettingsView = 'MAIN' | 'PERSONAL' | 'DOCUMENTS' | 'BANK' | 'EMERGENCY' | 'DELIVERY';
-type AuthScreen = 'LOGIN' | 'REGISTER' | 'RECOVERY';
+type AuthScreen = 'LOGIN' | 'REGISTER' | 'RECOVERY' | 'VERIFICATION';
 
 const SOUND_OPTIONS = [
   { id: 'beep', label: 'Alerta Padrão', url: 'https://actions.google.com/sounds/v1/alarms/beep_short.ogg', icon: 'fa-bell' },
@@ -17,8 +17,8 @@ const SOUND_OPTIONS = [
 
 const ANTICIPATION_FEE = 5.00;
 
-// Dados do Usuário e Banco (Simulado)
-const USER_PROFILE = {
+// Dados do Usuário e Banco (Simulado - Base)
+const DEFAULT_USER_PROFILE = {
   name: "João Motoca",
   level: "Papa-Léguas Pro",
   avatar: "https://i.pravatar.cc/150?u=joao",
@@ -32,7 +32,7 @@ const USER_PROFILE = {
   }
 };
 
-const USER_EXTENDED = {
+const DEFAULT_USER_EXTENDED = {
   cpf: "332.145.789-00",
   phone: "(11) 98765-4321",
   email: "joao.motoca@papaleguas.com",
@@ -123,6 +123,20 @@ const App: React.FC = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [authScreen, setAuthScreen] = useState<AuthScreen>('LOGIN');
   const [isLoadingAuth, setIsLoadingAuth] = useState(false);
+  
+  // Simulação de Banco de Dados de Usuários
+  const [registeredUsers, setRegisteredUsers] = useState<any[]>([
+    {
+       cpf: '123.456.789-00', // CPF Mockado para teste simples
+       password: '123',
+       name: DEFAULT_USER_PROFILE.name,
+       email: DEFAULT_USER_EXTENDED.email,
+       verified: true 
+    }
+  ]);
+  
+  // Estado para registro pendente
+  const [pendingUser, setPendingUser] = useState<any>(null);
 
   // Estados Globais
   const [status, setStatus] = useState<DriverStatus>(DriverStatus.OFFLINE);
@@ -155,6 +169,14 @@ const App: React.FC = () => {
   // Validação de Código (Coleta e Entrega)
   const [typedCode, setTypedCode] = useState('');
   const codeInputRefs = [useRef<HTMLInputElement>(null), useRef<HTMLInputElement>(null), useRef<HTMLInputElement>(null), useRef<HTMLInputElement>(null)];
+
+  // OTP Verification State (6 digits)
+  const [otp, setOtp] = useState(['', '', '', '', '', '']);
+  const otpInputRefs = [
+    useRef<HTMLInputElement>(null), useRef<HTMLInputElement>(null), useRef<HTMLInputElement>(null),
+    useRef<HTMLInputElement>(null), useRef<HTMLInputElement>(null), useRef<HTMLInputElement>(null)
+  ];
+  const [otpTimer, setOtpTimer] = useState(0);
 
   // Anticipation state
   const [isAnticipating, setIsAnticipating] = useState(false);
@@ -197,6 +219,8 @@ const App: React.FC = () => {
   // Auth Inputs State
   const [loginCpf, setLoginCpf] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
+  const [registerData, setRegisterData] = useState({ name: '', cpf: '', email: '', phone: '', password: '', confirmPassword: '' });
+  
   const [recoveryMethod, setRecoveryMethod] = useState<'cpf' | 'email'>('cpf');
   const [recoveryInput, setRecoveryInput] = useState('');
 
@@ -209,6 +233,15 @@ const App: React.FC = () => {
     localStorage.setItem('theme', theme);
     document.body.className = theme === 'dark' ? 'bg-[#121212] text-white' : 'bg-zinc-50 text-zinc-900';
   }, [theme]);
+  
+  // Timer OTP
+  useEffect(() => {
+    let timer: any;
+    if (otpTimer > 0) {
+      timer = setInterval(() => setOtpTimer(prev => prev - 1), 1000);
+    }
+    return () => clearInterval(timer);
+  }, [otpTimer]);
 
   // Check GPS on mount
   useEffect(() => {
@@ -483,10 +516,26 @@ const App: React.FC = () => {
       codeInputRefs[index + 1].current?.focus();
     }
   };
+  
+  const handleOtpChange = (index: number, value: string) => {
+    if (value.length > 1) return;
+    const newOtp = [...otp];
+    newOtp[index] = value;
+    setOtp(newOtp);
+    if (value && index < 5) {
+      otpInputRefs[index + 1].current?.focus();
+    }
+  };
 
   const handleKeyDown = (index: number, e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Backspace' && !typedCode[index] && index > 0) {
       codeInputRefs[index - 1].current?.focus();
+    }
+  };
+  
+  const handleOtpKeyDown = (index: number, e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Backspace' && !otp[index] && index > 0) {
+      otpInputRefs[index - 1].current?.focus();
     }
   };
 
@@ -520,21 +569,90 @@ const App: React.FC = () => {
       alert("Preencha CPF e Senha.");
       return;
     }
+    
     setIsLoadingAuth(true);
+    
     setTimeout(() => {
       setIsLoadingAuth(false);
+      
+      const user = registeredUsers.find(u => u.cpf === loginCpf && u.password === loginPassword);
+      
+      if (!user) {
+        alert("Credenciais inválidas.");
+        return;
+      }
+      
+      if (!user.verified) {
+        alert("Por favor, verifique seu e-mail para ativar a conta antes de entrar.");
+        // Opcional: Poderia oferecer para reenviar o código aqui e ir para a tela de verificação
+        return;
+      }
+      
+      // Login Sucesso
       setIsAuthenticated(true);
     }, 1500);
   };
 
   const handleRegister = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!registerData.name || !registerData.cpf || !registerData.email || !registerData.password) {
+      alert("Preencha todos os campos obrigatórios.");
+      return;
+    }
+    
     setIsLoadingAuth(true);
     setTimeout(() => {
       setIsLoadingAuth(false);
-      alert("Cadastro realizado com sucesso! Faça login.");
-      setAuthScreen('LOGIN');
+      
+      // Cria registro pendente
+      setPendingUser({ ...registerData });
+      
+      // Simula envio de código
+      console.log("Código enviado para: " + registerData.email);
+      setOtp(['', '', '', '', '', '']);
+      setOtpTimer(60); // 60 segundos para reenviar
+      
+      setAuthScreen('VERIFICATION');
     }, 1500);
+  };
+  
+  const handleVerifyCode = () => {
+    const code = otp.join('');
+    if (code.length < 6) return;
+    
+    setIsLoadingAuth(true);
+    
+    // Simulação de validação de API
+    setTimeout(() => {
+      setIsLoadingAuth(false);
+      
+      // Código mockado '123456'
+      if (code === '123456') {
+         // Cria usuário verificado
+         const newUser = {
+           ...pendingUser,
+           verified: true
+         };
+         
+         setRegisteredUsers(prev => [...prev, newUser]);
+         setPendingUser(null);
+         
+         alert("Conta verificada com sucesso! Faça login.");
+         setAuthScreen('LOGIN');
+      } else {
+         alert("Código inválido. Tente novamente. (Dica: use 123456)");
+         setOtp(['', '', '', '', '', '']);
+         otpInputRefs[0].current?.focus();
+      }
+    }, 1500);
+  };
+  
+  const handleResendCode = () => {
+     if (otpTimer > 0) return;
+     
+     setOtpTimer(60);
+     alert(`Novo código enviado para ${pendingUser?.email}`);
+     // Reset fields? Not necessary, maybe user just missed it.
   };
 
   const handleRecovery = (e: React.FormEvent) => {
@@ -625,17 +743,75 @@ const App: React.FC = () => {
                     <div className="w-8"></div>
                  </div>
                  <div className="space-y-3 h-64 overflow-y-auto pr-2 custom-scrollbar">
-                    <input type="text" placeholder="Nome Completo" className={`w-full h-12 rounded-xl px-4 ${innerBg} ${textPrimary} outline-none border border-white/5 focus:border-[#FF6B00] text-sm font-bold placeholder:text-zinc-600`} required />
-                    <input type="text" placeholder="CPF" className={`w-full h-12 rounded-xl px-4 ${innerBg} ${textPrimary} outline-none border border-white/5 focus:border-[#FF6B00] text-sm font-bold placeholder:text-zinc-600`} required />
-                    <input type="email" placeholder="E-mail" className={`w-full h-12 rounded-xl px-4 ${innerBg} ${textPrimary} outline-none border border-white/5 focus:border-[#FF6B00] text-sm font-bold placeholder:text-zinc-600`} required />
-                    <input type="tel" placeholder="Celular" className={`w-full h-12 rounded-xl px-4 ${innerBg} ${textPrimary} outline-none border border-white/5 focus:border-[#FF6B00] text-sm font-bold placeholder:text-zinc-600`} required />
-                    <input type="password" placeholder="Senha" className={`w-full h-12 rounded-xl px-4 ${innerBg} ${textPrimary} outline-none border border-white/5 focus:border-[#FF6B00] text-sm font-bold placeholder:text-zinc-600`} required />
-                    <input type="password" placeholder="Confirmar Senha" className={`w-full h-12 rounded-xl px-4 ${innerBg} ${textPrimary} outline-none border border-white/5 focus:border-[#FF6B00] text-sm font-bold placeholder:text-zinc-600`} required />
+                    <input type="text" value={registerData.name} onChange={e => setRegisterData({...registerData, name: e.target.value})} placeholder="Nome Completo" className={`w-full h-12 rounded-xl px-4 ${innerBg} ${textPrimary} outline-none border border-white/5 focus:border-[#FF6B00] text-sm font-bold placeholder:text-zinc-600`} required />
+                    <input type="text" value={registerData.cpf} onChange={e => setRegisterData({...registerData, cpf: e.target.value})} placeholder="CPF" className={`w-full h-12 rounded-xl px-4 ${innerBg} ${textPrimary} outline-none border border-white/5 focus:border-[#FF6B00] text-sm font-bold placeholder:text-zinc-600`} required />
+                    <input type="email" value={registerData.email} onChange={e => setRegisterData({...registerData, email: e.target.value})} placeholder="E-mail" className={`w-full h-12 rounded-xl px-4 ${innerBg} ${textPrimary} outline-none border border-white/5 focus:border-[#FF6B00] text-sm font-bold placeholder:text-zinc-600`} required />
+                    <input type="tel" value={registerData.phone} onChange={e => setRegisterData({...registerData, phone: e.target.value})} placeholder="Celular" className={`w-full h-12 rounded-xl px-4 ${innerBg} ${textPrimary} outline-none border border-white/5 focus:border-[#FF6B00] text-sm font-bold placeholder:text-zinc-600`} required />
+                    <input type="password" value={registerData.password} onChange={e => setRegisterData({...registerData, password: e.target.value})} placeholder="Senha" className={`w-full h-12 rounded-xl px-4 ${innerBg} ${textPrimary} outline-none border border-white/5 focus:border-[#FF6B00] text-sm font-bold placeholder:text-zinc-600`} required />
+                    <input type="password" value={registerData.confirmPassword} onChange={e => setRegisterData({...registerData, confirmPassword: e.target.value})} placeholder="Confirmar Senha" className={`w-full h-12 rounded-xl px-4 ${innerBg} ${textPrimary} outline-none border border-white/5 focus:border-[#FF6B00] text-sm font-bold placeholder:text-zinc-600`} required />
                  </div>
                  <button type="submit" disabled={isLoadingAuth} className="w-full h-14 bg-[#FF6B00] rounded-2xl font-black text-white uppercase tracking-widest shadow-lg shadow-orange-500/20 active:scale-95 transition-transform flex items-center justify-center">
-                    {isLoadingAuth ? <i className="fas fa-circle-notch fa-spin"></i> : "Cadastrar"}
+                    {isLoadingAuth ? <i className="fas fa-circle-notch fa-spin"></i> : "Continuar"}
                  </button>
               </form>
+            )}
+            
+            {/* Verification OTP */}
+            {authScreen === 'VERIFICATION' && (
+               <div className="space-y-6">
+                 <div className="flex items-center justify-between mb-2">
+                    <button type="button" onClick={() => setAuthScreen('REGISTER')} className={`w-8 h-8 rounded-full flex items-center justify-center ${innerBg} ${textMuted}`}>
+                       <i className="fas fa-chevron-left"></i>
+                    </button>
+                    <h2 className={`text-xl font-black italic ${textPrimary}`}>Verificar E-mail</h2>
+                    <div className="w-8"></div>
+                 </div>
+                 
+                 <div className="text-center mb-6">
+                    <div className="w-16 h-16 bg-[#FF6B00]/10 rounded-full flex items-center justify-center mx-auto mb-4 border border-[#FF6B00]/30">
+                       <i className="fas fa-envelope-open-text text-2xl text-[#FF6B00]"></i>
+                    </div>
+                    <p className={`text-sm font-bold ${textMuted} leading-relaxed`}>
+                       Enviamos um código para <br/>
+                       <span className={textPrimary}>{pendingUser?.email}</span>
+                    </p>
+                    <p className={`text-xs ${textMuted} mt-2`}>Digite abaixo para ativar sua conta.</p>
+                 </div>
+
+                 <div className="flex justify-center space-x-2">
+                     {otp.map((digit, index) => (
+                       <input
+                         key={index}
+                         ref={otpInputRefs[index]}
+                         type="text"
+                         inputMode="numeric"
+                         maxLength={1}
+                         value={digit}
+                         onChange={(e) => handleOtpChange(index, e.target.value)}
+                         onKeyDown={(e) => handleOtpKeyDown(index, e)}
+                         className={`w-10 h-14 rounded-xl text-center text-xl font-black transition-all outline-none border-2 ${digit ? 'border-[#FF6B00] text-[#FF6B00]' : `${innerBg} border-white/10 ${textPrimary} focus:border-[#FF6B00]`}`}
+                       />
+                     ))}
+                 </div>
+
+                 <button 
+                  onClick={handleVerifyCode}
+                  disabled={isLoadingAuth || otp.some(d => !d)}
+                  className={`w-full h-16 rounded-2xl font-black text-white uppercase tracking-widest shadow-lg shadow-orange-500/20 active:scale-95 transition-transform flex items-center justify-center ${otp.some(d => !d) ? 'bg-zinc-700 opacity-50' : 'bg-[#FF6B00]'}`}
+                 >
+                    {isLoadingAuth ? <i className="fas fa-circle-notch fa-spin"></i> : "Confirmar Código"}
+                 </button>
+                 
+                 <div className="text-center">
+                    <button 
+                      onClick={handleResendCode}
+                      disabled={otpTimer > 0}
+                      className={`text-[10px] font-black uppercase tracking-widest ${otpTimer > 0 ? textMuted : 'text-[#FF6B00]'}`}
+                    >
+                       {otpTimer > 0 ? `Reenviar código em ${otpTimer}s` : "Reenviar Código"}
+                    </button>
+                 </div>
+              </div>
             )}
 
             {/* Recovery */}
@@ -1086,8 +1262,8 @@ const App: React.FC = () => {
                    <i className="fas fa-bank text-xl"></i>
                 </div>
                 <div>
-                   <h3 className={`font-black text-lg ${textPrimary}`}>{USER_PROFILE.bank.name}</h3>
-                   <p className={`${textMuted} font-bold text-[10px] uppercase`}>AG {USER_PROFILE.bank.agency} • CC {USER_PROFILE.bank.account}</p>
+                   <h3 className={`font-black text-lg ${textPrimary}`}>{DEFAULT_USER_PROFILE.bank.name}</h3>
+                   <p className={`${textMuted} font-bold text-[10px] uppercase`}>AG {DEFAULT_USER_PROFILE.bank.agency} • CC {DEFAULT_USER_PROFILE.bank.account}</p>
                 </div>
                 <div className="ml-auto">
                    <i className="fas fa-check-circle text-green-500 text-xl"></i>
@@ -1171,11 +1347,11 @@ const App: React.FC = () => {
                 <h1 className={`text-3xl font-black italic mb-8 ${textPrimary}`}>Ajustes</h1>
                 <div className={`flex items-center space-x-4 mb-10 p-6 rounded-[32px] border ${cardBg}`}>
                   <div className="w-16 h-16 rounded-3xl p-1 border-2 border-[#FF6B00]">
-                    <img src={USER_PROFILE.avatar} className="w-full h-full object-cover rounded-2xl" alt="Perfil" />
+                    <img src={DEFAULT_USER_PROFILE.avatar} className="w-full h-full object-cover rounded-2xl" alt="Perfil" />
                   </div>
                   <div>
-                    <h2 className={`text-xl font-black ${textPrimary}`}>{USER_PROFILE.name}</h2>
-                    <p className={`${textMuted} text-xs font-bold uppercase tracking-widest`}>Nível: {USER_PROFILE.level}</p>
+                    <h2 className={`text-xl font-black ${textPrimary}`}>{DEFAULT_USER_PROFILE.name}</h2>
+                    <p className={`${textMuted} text-xs font-bold uppercase tracking-widest`}>Nível: {DEFAULT_USER_PROFILE.level}</p>
                   </div>
                 </div>
 
@@ -1221,7 +1397,7 @@ const App: React.FC = () => {
                            <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${innerBg} text-[#FF6B00]`}><i className="fas fa-motorcycle"></i></div>
                            <div>
                               <p className={`text-sm font-bold ${textPrimary}`}>Veículo e Região</p>
-                              <p className={`text-[9px] font-bold uppercase ${textMuted} mt-0.5`}>{selectedVehicle} • {USER_EXTENDED.region}</p>
+                              <p className={`text-[9px] font-bold uppercase ${textMuted} mt-0.5`}>{selectedVehicle} • {DEFAULT_USER_EXTENDED.region}</p>
                            </div>
                         </div>
                         <i className={`fas fa-chevron-right text-xs ${textMuted}`}></i>
@@ -1266,13 +1442,13 @@ const App: React.FC = () => {
               {settingsView === 'PERSONAL' && (
                 <div className="space-y-4 animate-in slide-in-from-right duration-300">
                   {[
-                    { label: 'Nome Completo', value: USER_PROFILE.name },
-                    { label: 'CPF', value: USER_EXTENDED.cpf },
-                    { label: 'Telefone', value: USER_EXTENDED.phone },
-                    { label: 'E-mail', value: USER_EXTENDED.email },
-                    { label: 'Região', value: USER_EXTENDED.region },
-                    { label: 'Gênero', value: USER_EXTENDED.gender },
-                    { label: 'Escolaridade', value: USER_EXTENDED.education },
+                    { label: 'Nome Completo', value: DEFAULT_USER_PROFILE.name },
+                    { label: 'CPF', value: DEFAULT_USER_EXTENDED.cpf },
+                    { label: 'Telefone', value: DEFAULT_USER_EXTENDED.phone },
+                    { label: 'E-mail', value: DEFAULT_USER_EXTENDED.email },
+                    { label: 'Região', value: DEFAULT_USER_EXTENDED.region },
+                    { label: 'Gênero', value: DEFAULT_USER_EXTENDED.gender },
+                    { label: 'Escolaridade', value: DEFAULT_USER_EXTENDED.education },
                   ].map((item, i) => (
                     <div key={i} className={`p-4 rounded-[24px] border ${cardBg}`}>
                       <p className={`${textMuted} text-[9px] font-black uppercase tracking-widest mb-1`}>{item.label}</p>
@@ -1296,11 +1472,11 @@ const App: React.FC = () => {
                          </div>
                          <div>
                             <p className={`${textMuted} text-[9px] font-black uppercase tracking-widest mb-1`}>Categoria</p>
-                            <p className={`text-xl font-black ${textPrimary}`}>{USER_EXTENDED.cnh.category}</p>
+                            <p className={`text-xl font-black ${textPrimary}`}>{DEFAULT_USER_EXTENDED.cnh.category}</p>
                          </div>
                          <div className="col-span-2">
                             <p className={`${textMuted} text-[9px] font-black uppercase tracking-widest mb-1`}>Data de Validade</p>
-                            <p className={`text-xl font-black ${textPrimary}`}>{USER_EXTENDED.cnh.expiry}</p>
+                            <p className={`text-xl font-black ${textPrimary}`}>{DEFAULT_USER_EXTENDED.cnh.expiry}</p>
                          </div>
                       </div>
                    </div>
@@ -1314,22 +1490,22 @@ const App: React.FC = () => {
                       <div className="flex items-center space-x-4 mb-6">
                          <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${innerBg} text-[#FF6B00]`}><i className="fas fa-bank"></i></div>
                          <div>
-                            <p className={`text-lg font-black ${textPrimary}`}>{USER_PROFILE.bank.name}</p>
-                            <p className={`text-[10px] font-bold ${textMuted}`}>{USER_PROFILE.bank.type}</p>
+                            <p className={`text-lg font-black ${textPrimary}`}>{DEFAULT_USER_PROFILE.bank.name}</p>
+                            <p className={`text-[10px] font-bold ${textMuted}`}>{DEFAULT_USER_PROFILE.bank.type}</p>
                          </div>
                       </div>
                       <div className="grid grid-cols-2 gap-4">
                         <div>
                           <p className={`${textMuted} text-[9px] font-black uppercase tracking-widest`}>Agência</p>
-                          <p className={`text-sm font-bold ${textPrimary}`}>{USER_PROFILE.bank.agency}</p>
+                          <p className={`text-sm font-bold ${textPrimary}`}>{DEFAULT_USER_PROFILE.bank.agency}</p>
                         </div>
                         <div>
                           <p className={`${textMuted} text-[9px] font-black uppercase tracking-widest`}>Conta</p>
-                          <p className={`text-sm font-bold ${textPrimary}`}>{USER_PROFILE.bank.account}</p>
+                          <p className={`text-sm font-bold ${textPrimary}`}>{DEFAULT_USER_PROFILE.bank.account}</p>
                         </div>
                          <div className="col-span-2">
                           <p className={`${textMuted} text-[9px] font-black uppercase tracking-widest`}>Chave PIX</p>
-                          <p className={`text-sm font-bold ${textPrimary}`}>{USER_PROFILE.bank.pixKey}</p>
+                          <p className={`text-sm font-bold ${textPrimary}`}>{DEFAULT_USER_PROFILE.bank.pixKey}</p>
                         </div>
                       </div>
                    </div>
@@ -1415,7 +1591,7 @@ const App: React.FC = () => {
                    <div className={`p-6 rounded-[32px] border ${cardBg}`}>
                       <p className={`${textMuted} font-black uppercase text-[10px] tracking-widest mb-4`}>Região de Atuação</p>
                       <div className={`flex items-center justify-between p-4 rounded-xl border border-white/5 ${innerBg}`}>
-                         <span className={`text-sm font-bold ${textPrimary}`}>{USER_EXTENDED.region}</span>
+                         <span className={`text-sm font-bold ${textPrimary}`}>{DEFAULT_USER_EXTENDED.region}</span>
                          <span className="text-[10px] font-black text-[#FF6B00] uppercase">Alterar</span>
                       </div>
                    </div>
@@ -1446,7 +1622,7 @@ const App: React.FC = () => {
             {/* Left: Avatar */}
             <div className="flex items-center justify-center">
                  <div className="w-10 h-10 rounded-full p-0.5 border-2 border-[#FF6B00] shadow-lg shadow-orange-900/20">
-                    <img src={USER_PROFILE.avatar} alt="Perfil" className="w-full h-full rounded-full object-cover" />
+                    <img src={DEFAULT_USER_PROFILE.avatar} alt="Perfil" className="w-full h-full rounded-full object-cover" />
                  </div>
             </div>
 
