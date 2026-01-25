@@ -535,7 +535,6 @@ const App: React.FC = () => {
   };
 
   const renderAuthScreen = () => {
-    // ... (Mantendo código existente de autenticação - Copiado para garantir integridade)
     return (
       <div className={`h-screen w-screen flex flex-col items-center justify-center p-6 overflow-hidden relative ${theme === 'dark' ? 'bg-black' : 'bg-zinc-50'}`}>
         <div className="absolute top-0 left-0 w-full h-full opacity-10 pointer-events-none">
@@ -546,7 +545,6 @@ const App: React.FC = () => {
         <div className="relative z-10 w-full max-w-sm flex flex-col items-center">
           <div className="mb-12 scale-125">
             <Logo size="lg" />
-            <div className={`mt-2 text-center text-[10px] font-black uppercase tracking-[0.3em] ${theme === 'dark' ? 'text-zinc-500' : 'text-zinc-400'}`}>Entregador</div>
           </div>
 
           <div className={`w-full p-8 rounded-[40px] border shadow-2xl backdrop-blur-sm animate-in fade-in slide-in-from-bottom duration-500 ${cardBg}`}>
