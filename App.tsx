@@ -152,7 +152,7 @@ const App: React.FC = () => {
   // Mission detail state
   const [showMissionMapPicker, setShowMissionMapPicker] = useState(false);
 
-  // Validação de Código de Entrega (OTP) - 4 últimos dígitos do celular do cliente
+  // Validação de Código (Coleta e Entrega)
   const [typedCode, setTypedCode] = useState('');
   const codeInputRefs = [useRef<HTMLInputElement>(null), useRef<HTMLInputElement>(null), useRef<HTMLInputElement>(null), useRef<HTMLInputElement>(null)];
 
@@ -199,6 +199,11 @@ const App: React.FC = () => {
   const [loginPassword, setLoginPassword] = useState('');
   const [recoveryMethod, setRecoveryMethod] = useState<'cpf' | 'email'>('cpf');
   const [recoveryInput, setRecoveryInput] = useState('');
+
+  // Limpa o código digitado sempre que o status muda
+  useEffect(() => {
+    setTypedCode('');
+  }, [status]);
 
   useEffect(() => {
     localStorage.setItem('theme', theme);
@@ -266,7 +271,7 @@ const App: React.FC = () => {
     switch (status) {
       case DriverStatus.GOING_TO_STORE: return 'INDO PARA COLETA';
       case DriverStatus.ARRIVED_AT_STORE: return isOrderReady ? 'PEDIDO PRONTO' : 'AGUARDANDO PEDIDO';
-      case DriverStatus.PICKING_UP: return 'SAÍDA DE BALCÃO';
+      case DriverStatus.PICKING_UP: return 'CONFIRMAÇÃO DE COLETA';
       case DriverStatus.GOING_TO_CUSTOMER: return 'INDO PARA O CLIENTE';
       case DriverStatus.ARRIVED_AT_CUSTOMER: return 'LOCAL DE ENTREGA';
       default: return status.replace(/_/g, ' ');
@@ -408,7 +413,7 @@ const App: React.FC = () => {
   }, [status, alertCountdown]);
 
   const handleFinishDelivery = () => {
-    if (mission && isCollectionCodeValid) {
+    if (mission) {
       const earned = mission.earnings;
       setBalance(prev => prev + earned);
       setDailyEarnings(prev => prev + earned);
@@ -470,6 +475,7 @@ const App: React.FC = () => {
   const handleCodeChange = (index: number, value: string) => {
     if (value.length > 1) return;
     const newCode = typedCode.split('');
+    while(newCode.length <= index) newCode.push(''); // Ensure array is long enough
     newCode[index] = value;
     const combined = newCode.join('');
     setTypedCode(combined);
@@ -484,7 +490,14 @@ const App: React.FC = () => {
     }
   };
 
-  const isCollectionCodeValid = mission && typedCode === mission.customerPhoneSuffix;
+  // Função centralizada para validar código dependendo do estágio
+  const isCodeValid = () => {
+    if (!mission) return false;
+    // Na coleta (PICKING_UP), a conferência é visual, então não bloqueamos o botão
+    if (status === DriverStatus.PICKING_UP) return true;
+    if (status === DriverStatus.ARRIVED_AT_CUSTOMER) return typedCode === mission.customerPhoneSuffix;
+    return true; // Outros estágios não exigem código para avançar
+  };
 
   const cardBg = theme === 'dark' ? 'bg-zinc-900 border-white/5' : 'bg-white border-zinc-200 shadow-sm';
   const textPrimary = theme === 'dark' ? 'text-white' : 'text-zinc-900';
@@ -496,9 +509,9 @@ const App: React.FC = () => {
   const handleMainAction = () => {
     if (status === DriverStatus.GOING_TO_STORE) setStatus(DriverStatus.ARRIVED_AT_STORE); 
     else if (status === DriverStatus.ARRIVED_AT_STORE) setStatus(DriverStatus.PICKING_UP);
-    else if (status === DriverStatus.PICKING_UP) setStatus(DriverStatus.GOING_TO_CUSTOMER);
+    else if (status === DriverStatus.PICKING_UP && isCodeValid()) setStatus(DriverStatus.GOING_TO_CUSTOMER);
     else if (status === DriverStatus.GOING_TO_CUSTOMER) setStatus(DriverStatus.ARRIVED_AT_CUSTOMER); 
-    else handleFinishDelivery(); 
+    else if (status === DriverStatus.ARRIVED_AT_CUSTOMER && isCodeValid()) handleFinishDelivery(); 
   };
 
   // ---------------- AUTH HANDLERS ----------------
@@ -845,11 +858,34 @@ const App: React.FC = () => {
                            </div>
                         </div>
                       )}
+                      
+                      {/* NOVO: Interface de PICKING_UP (Coleta Confirmada Visualmente) */}
+                      {status === DriverStatus.PICKING_UP && (
+                        <div className="relative overflow-hidden rounded-[28px] border-2 border-dashed border-[#FF6B00]/40 bg-[#FF6B00]/5 p-6 flex flex-col items-center text-center animate-in zoom-in duration-300">
+                           <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-[#FF6B00] to-transparent opacity-50"></div>
+                           
+                           <div className="mb-4">
+                             <p className="text-[10px] font-black uppercase tracking-[0.2em] text-[#FF6B00] mb-2">Mostre ao Atendente</p>
+                             <div className="flex items-center justify-center space-x-3 mb-1">
+                                <i className="fas fa-ticket text-3xl text-[#FFD700]"></i>
+                                <span className={`text-6xl font-black italic tracking-tighter ${textPrimary}`}>{mission.collectionCode}</span>
+                             </div>
+                           </div>
 
+                           <div className="w-full h-px bg-[#FF6B00]/20 mb-4"></div>
+
+                           <div className="flex flex-col items-center">
+                             <p className={`${textMuted} text-[9px] font-black uppercase tracking-widest mb-1`}>Cliente</p>
+                             <h2 className={`text-2xl font-black ${textPrimary} line-clamp-1`}>{mission.customerName}</h2>
+                           </div>
+                        </div>
+                      )}
+
+                      {/* Campo de Código Inteligente: APENAS na Entrega agora */}
                       {status === DriverStatus.ARRIVED_AT_CUSTOMER && (
-                        <div className={`p-5 rounded-[24px] border ${isCollectionCodeValid ? 'bg-green-500/10 border-green-500/40' : 'bg-white/5 border-white/5'}`}>
-                          <p className={`text-[9px] font-black uppercase text-center mb-3 tracking-widest ${isCollectionCodeValid ? 'text-green-500' : 'text-zinc-400'}`}>
-                            {isCollectionCodeValid ? 'CÓDIGO CONFIRMADO' : 'CÓDIGO (4 DÍGITOS DO CELULAR):'}
+                        <div className={`p-4 rounded-[24px] border mb-4 transition-all ${isCodeValid() ? 'bg-green-500/10 border-green-500/40' : 'bg-white/5 border-white/5'}`}>
+                          <p className={`text-[9px] font-black uppercase text-center mb-3 tracking-widest ${isCodeValid() ? 'text-green-500' : textMuted}`}>
+                            CÓDIGO DE ENTREGA (4 DÍGITOS DO CELULAR):
                           </p>
                           <div className="flex justify-center space-x-2">
                             {[0, 1, 2, 3].map(i => (
@@ -862,7 +898,7 @@ const App: React.FC = () => {
                                 value={typedCode[i] || ''}
                                 onChange={(e) => handleCodeChange(i, e.target.value)}
                                 onKeyDown={(e) => handleKeyDown(i, e)}
-                                className={`w-11 h-14 rounded-xl text-center text-2xl font-black transition-all outline-none border-2 ${isCollectionCodeValid ? 'bg-green-500/20 border-green-500 text-green-500' : `${innerBg} border-white/10 text-white focus:border-[#FF6B00]`}`}
+                                className={`w-11 h-14 rounded-xl text-center text-2xl font-black transition-all outline-none border-2 ${isCodeValid() ? 'bg-green-500/20 border-green-500 text-green-500' : `${innerBg} border-white/10 text-white focus:border-[#FF6B00]`}`}
                               />
                             ))}
                           </div>
@@ -876,13 +912,13 @@ const App: React.FC = () => {
                         label={
                           status === DriverStatus.GOING_TO_STORE ? 'Deslize p/ Chegar na Loja' : 
                           status === DriverStatus.ARRIVED_AT_STORE ? (isOrderReady ? 'Pedido Pronto / Iniciar Saída' : 'Aguardando Preparo...') : 
-                          status === DriverStatus.PICKING_UP ? 'Confirmar Protocolo e Sair' :
+                          status === DriverStatus.PICKING_UP ? 'Deslize p/ Confirmar Coleta' :
                           status === DriverStatus.GOING_TO_CUSTOMER ? 'Deslize p/ Chegar no Cliente' : 
                           'Deslize p/ Finalizar Entrega'
                         }
-                        disabled={status === DriverStatus.ARRIVED_AT_CUSTOMER && !isCollectionCodeValid}
+                        disabled={(status === DriverStatus.ARRIVED_AT_CUSTOMER) && !isCodeValid()}
                         color={status === DriverStatus.ARRIVED_AT_STORE || status === DriverStatus.PICKING_UP || status === DriverStatus.ARRIVED_AT_CUSTOMER ? '#FFD700' : '#FF6B00'}
-                        icon={status === DriverStatus.ARRIVED_AT_CUSTOMER && isCollectionCodeValid ? 'fa-flag-checkered' : 'fa-chevron-right'}
+                        icon={(status === DriverStatus.ARRIVED_AT_CUSTOMER && isCodeValid()) || status === DriverStatus.PICKING_UP ? 'fa-check' : 'fa-chevron-right'}
                       />
                     </div>
                   </div>

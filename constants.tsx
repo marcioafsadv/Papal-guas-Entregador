@@ -31,25 +31,25 @@ export const MOCK_STORES = [
     name: 'Burguer King - Itu',
     address: 'Av. Dr. Otaviano Pereira Mendes, 363 - Liberdade, Itu - SP',
     items: ['1x Whopper Especial', '1x Batata Média', '1x Coca-Cola 500ml'],
-    collectionCode: 'BK-552'
+    collectionCode: '5520'
   },
   {
     name: 'Restaurante Tonilu Café e Cervejaria',
     address: 'Plaza Shopping, Av. Dr. Ermelindo Maffei, 1199 - Jardim Paraiso, Itu - SP',
     items: ['1x Almoço Executivo', '1x Café Expresso Gourmet', '1x Cerveja Artesanal'],
-    collectionCode: 'TON-981'
+    collectionCode: '0981'
   },
   {
     name: 'Padaria e Conveniência Rebeca',
     address: 'Av. Dr. Otaviano Pereira Mendes, 1060 - Liberdade, Itu - SP',
     items: ['10x Pão Francês', '1x Leite Integral 1L', '1x Presunto e Queijo 200g'],
-    collectionCode: 'REB-102'
+    collectionCode: '1025'
   },
   {
     name: 'Big Lanches',
     address: 'Av. Caetano Ruggieri, 2383 - Parque Res. Mayard, Itu - SP',
     items: ['1x X-Tudo Completo', '1x Porção de Batata G', '1x Suco de Laranja 500ml'],
-    collectionCode: 'BIG-440'
+    collectionCode: '4400'
   }
 ];
 
