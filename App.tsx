@@ -7,13 +7,32 @@ import { ActionSlider } from './components/ActionSlider';
 import { Logo } from './components/Logo';
 
 type Screen = 'HOME' | 'WALLET' | 'ORDERS' | 'SETTINGS' | 'WITHDRAWAL_REQUEST' | 'NOTIFICATIONS' | 'FACIAL_VERIFICATION';
-type SettingsView = 'MAIN' | 'PERSONAL' | 'DOCUMENTS' | 'BANK' | 'EMERGENCY' | 'DELIVERY';
+type SettingsView = 'MAIN' | 'PERSONAL' | 'DOCUMENTS' | 'BANK' | 'EMERGENCY' | 'DELIVERY' | 'SOUNDS';
 type AuthScreen = 'LOGIN' | 'REGISTER' | 'RECOVERY' | 'VERIFICATION';
 type MapMode = 'standard' | 'satellite';
 
 const SOUND_OPTIONS = [
-  { id: 'beep', label: 'Alerta Padrão', url: 'https://actions.google.com/sounds/v1/alarms/beep_short.ogg', icon: 'fa-bell' },
-  { id: 'horn', label: 'Buzina', url: 'https://actions.google.com/sounds/v1/cartoon/clown_horn.ogg', icon: 'fa-bullhorn' }
+  { 
+    id: 'cheetah', 
+    label: 'Rugido do Guepardo', 
+    description: 'Alerta exclusivo da marca',
+    url: 'https://actions.google.com/sounds/v1/animals/cat_purr.ogg', 
+    icon: 'fa-cat' 
+  },
+  { 
+    id: 'horn', 
+    label: 'Buzina de Moto', 
+    description: 'Bip duplo agudo',
+    url: 'https://actions.google.com/sounds/v1/cartoon/clown_horn.ogg', 
+    icon: 'fa-bullhorn' 
+  },
+  { 
+    id: 'beep', 
+    label: 'Notificação Clássica', 
+    description: 'Toque suave padrão',
+    url: 'https://actions.google.com/sounds/v1/alarms/beep_short.ogg', 
+    icon: 'fa-bell' 
+  }
 ];
 
 const ANTICIPATION_FEE = 5.00;
@@ -217,7 +236,7 @@ const App: React.FC = () => {
 
   // Configurações de Interface
   const [soundEnabled, setSoundEnabled] = useState(true);
-  const [selectedSoundId, setSelectedSoundId] = useState('beep');
+  const [selectedSoundId, setSelectedSoundId] = useState('cheetah'); // Default agora é Guepardo
   
   // Notificações
   const [notifications, setNotifications] = useState<NotificationModel[]>(MOCK_NOTIFICATIONS);
@@ -662,6 +681,18 @@ const App: React.FC = () => {
     return true; // Outros estágios não exigem código para avançar
   };
 
+  const applyCpfMask = (value: string) => {
+    let v = value.replace(/\D/g, ""); // Remove não numéricos
+    if (v.length > 11) v = v.slice(0, 11); // Limita a 11 dígitos
+
+    // Aplica formatação XXX.XXX.XXX-XX
+    v = v.replace(/(\d{3})(\d)/, "$1.$2");
+    v = v.replace(/(\d{3})(\d)/, "$1.$2");
+    v = v.replace(/(\d{3})(\d{1,2})$/, "$1-$2");
+    
+    return v;
+  };
+
   const cardBg = theme === 'dark' ? 'bg-zinc-900 border-white/5' : 'bg-white border-zinc-200 shadow-sm';
   const textPrimary = theme === 'dark' ? 'text-white' : 'text-zinc-900';
   const textMuted = theme === 'dark' ? 'text-zinc-500' : 'text-zinc-400';
@@ -835,7 +866,8 @@ const App: React.FC = () => {
                             type="text" 
                             placeholder="000.000.000-00"
                             value={loginCpf}
-                            onChange={(e) => setLoginCpf(e.target.value)}
+                            onChange={(e) => setLoginCpf(applyCpfMask(e.target.value))}
+                            maxLength={14}
                             className={`w-full bg-transparent outline-none font-bold ${textPrimary} placeholder:text-zinc-600`}
                           />
                        </div>
@@ -885,7 +917,7 @@ const App: React.FC = () => {
                  </div>
                  <div className="space-y-3 h-64 overflow-y-auto pr-2 custom-scrollbar">
                     <input type="text" value={registerData.name} onChange={e => setRegisterData({...registerData, name: e.target.value})} placeholder="Nome Completo" className={`w-full h-12 rounded-xl px-4 ${innerBg} ${textPrimary} outline-none border border-white/5 focus:border-[#FF6B00] text-sm font-bold placeholder:text-zinc-600`} required />
-                    <input type="text" value={registerData.cpf} onChange={e => setRegisterData({...registerData, cpf: e.target.value})} placeholder="CPF" className={`w-full h-12 rounded-xl px-4 ${innerBg} ${textPrimary} outline-none border border-white/5 focus:border-[#FF6B00] text-sm font-bold placeholder:text-zinc-600`} required />
+                    <input type="text" value={registerData.cpf} onChange={e => setRegisterData({...registerData, cpf: applyCpfMask(e.target.value)})} maxLength={14} placeholder="CPF" className={`w-full h-12 rounded-xl px-4 ${innerBg} ${textPrimary} outline-none border border-white/5 focus:border-[#FF6B00] text-sm font-bold placeholder:text-zinc-600`} required />
                     <input type="email" value={registerData.email} onChange={e => setRegisterData({...registerData, email: e.target.value})} placeholder="E-mail" className={`w-full h-12 rounded-xl px-4 ${innerBg} ${textPrimary} outline-none border border-white/5 focus:border-[#FF6B00] text-sm font-bold placeholder:text-zinc-600`} required />
                     <input type="tel" value={registerData.phone} onChange={e => setRegisterData({...registerData, phone: e.target.value})} placeholder="Celular" className={`w-full h-12 rounded-xl px-4 ${innerBg} ${textPrimary} outline-none border border-white/5 focus:border-[#FF6B00] text-sm font-bold placeholder:text-zinc-600`} required />
                     <input type="password" value={registerData.password} onChange={e => setRegisterData({...registerData, password: e.target.value})} placeholder="Senha" className={`w-full h-12 rounded-xl px-4 ${innerBg} ${textPrimary} outline-none border border-white/5 focus:border-[#FF6B00] text-sm font-bold placeholder:text-zinc-600`} required />
@@ -1758,13 +1790,27 @@ const App: React.FC = () => {
                   </section>
 
                   <section>
-                    <h3 className={`${textMuted} font-black uppercase text-[10px] tracking-[0.2em] mb-4`}>Dados da entrega</h3>
-                     <button onClick={() => setSettingsView('DELIVERY')} className={`w-full p-4 rounded-[24px] border flex justify-between items-center active:scale-[0.98] transition-all ${theme === 'dark' ? cardBg : 'bg-zinc-200 border-zinc-300'}`}>
+                    <h3 className={`${textMuted} font-black uppercase text-[10px] tracking-[0.2em] mb-4`}>Configurações do App</h3>
+                     <button onClick={() => setSettingsView('DELIVERY')} className={`w-full p-4 rounded-[24px] border flex justify-between items-center active:scale-[0.98] transition-all mb-3 ${theme === 'dark' ? cardBg : 'bg-zinc-200 border-zinc-300'}`}>
                         <div className="flex items-center space-x-4">
                            <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${innerBg} text-[#FF6B00]`}><i className="fas fa-motorcycle"></i></div>
                            <div>
                               <p className={`text-sm font-bold ${textPrimary}`}>Veículo e Região</p>
                               <p className={`text-[9px] font-bold uppercase ${textMuted} mt-0.5`}>{selectedVehicle} • {DEFAULT_USER_EXTENDED.region}</p>
+                           </div>
+                        </div>
+                        <i className={`fas fa-chevron-right text-xs ${textMuted}`}></i>
+                      </button>
+
+                      {/* NEW BUTTON FOR SOUNDS NAVIGATION */}
+                      <button onClick={() => setSettingsView('SOUNDS')} className={`w-full p-4 rounded-[24px] border flex justify-between items-center active:scale-[0.98] transition-all ${theme === 'dark' ? cardBg : 'bg-zinc-200 border-zinc-300'}`}>
+                        <div className="flex items-center space-x-4">
+                           <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${innerBg} text-[#FF6B00]`}><i className="fas fa-volume-high"></i></div>
+                           <div>
+                              <p className={`text-sm font-bold ${textPrimary}`}>Alertas Sonoros</p>
+                              <p className={`text-[9px] font-bold uppercase ${textMuted} mt-0.5`}>
+                                 {SOUND_OPTIONS.find(s => s.id === selectedSoundId)?.label || 'Padrão'}
+                              </p>
                            </div>
                         </div>
                         <i className={`fas fa-chevron-right text-xs ${textMuted}`}></i>
@@ -1790,7 +1836,7 @@ const App: React.FC = () => {
             </div>
           );
         } else {
-          // Sub-telas (Personal, Documents, etc.) - Mantido
+          // Sub-telas (Personal, Documents, etc.)
           return (
             <div className={`h-full w-full p-6 overflow-y-auto pb-24 transition-colors duration-300 ${theme === 'dark' ? 'bg-black' : 'bg-zinc-50'}`}>
               <div className="flex items-center space-x-4 mb-8">
@@ -1803,6 +1849,7 @@ const App: React.FC = () => {
                   {settingsView === 'BANK' && 'Dados Bancários'}
                   {settingsView === 'EMERGENCY' && 'Emergência'}
                   {settingsView === 'DELIVERY' && 'Dados da Entrega'}
+                  {settingsView === 'SOUNDS' && 'Escolha o Alerta'}
                 </h1>
               </div>
 
@@ -1966,6 +2013,53 @@ const App: React.FC = () => {
                    <button onClick={() => setSettingsView('MAIN')} className="w-full h-16 bg-[#FF6B00] rounded-2xl font-black text-white uppercase italic tracking-widest shadow-xl active:scale-95 transition-transform">
                       Salvar Alterações
                    </button>
+                </div>
+              )}
+
+              {/* NOVA TELA DE SELEÇÃO DE SOM */}
+              {settingsView === 'SOUNDS' && (
+                <div className="space-y-4 animate-in slide-in-from-right duration-300">
+                   {SOUND_OPTIONS.map((sound) => (
+                      <div 
+                         key={sound.id}
+                         onClick={() => {
+                            setSelectedSoundId(sound.id);
+                            const audio = new Audio(sound.url);
+                            audio.volume = 0.5;
+                            audio.play().catch(e => console.log("Audio play error", e));
+                         }}
+                         className={`p-5 rounded-[32px] border-2 cursor-pointer transition-all active:scale-[0.98] relative overflow-hidden group ${
+                            selectedSoundId === sound.id 
+                               ? 'border-[#FF6B00] bg-[#FF6B00]/10 shadow-lg shadow-orange-900/20' 
+                               : `border-transparent ${cardBg}`
+                         }`}
+                      >
+                         <div className="flex items-center justify-between relative z-10">
+                            <div className="flex items-center space-x-5">
+                               <div className={`w-14 h-14 rounded-2xl flex items-center justify-center text-2xl transition-colors ${selectedSoundId === sound.id ? 'bg-[#FF6B00] text-white shadow-md' : `${innerBg} ${textMuted}`}`}>
+                                  <i className={`fas ${sound.icon}`}></i>
+                               </div>
+                               <div>
+                                  <h3 className={`text-base font-black ${selectedSoundId === sound.id ? 'text-[#FF6B00]' : textPrimary}`}>{sound.label}</h3>
+                                  <p className={`text-[10px] font-bold mt-1 ${textMuted}`}>{sound.description}</p>
+                               </div>
+                            </div>
+                            
+                            {selectedSoundId === sound.id && (
+                               <div className="w-8 h-8 rounded-full bg-[#FF6B00] flex items-center justify-center animate-in zoom-in duration-300">
+                                  <i className="fas fa-check text-white text-sm"></i>
+                               </div>
+                            )}
+                         </div>
+                      </div>
+                   ))}
+                   
+                   <div className={`mt-8 p-6 rounded-[24px] border border-dashed flex items-start space-x-3 ${theme === 'dark' ? 'bg-zinc-900/50 border-zinc-800' : 'bg-zinc-100 border-zinc-300'}`}>
+                      <i className="fas fa-circle-info text-[#FF6B00] mt-1"></i>
+                      <p className={`text-xs font-bold leading-relaxed ${textMuted}`}>
+                         <span className="text-[#FF6B00]">Dica Pro:</span> O "Rugido do Guepardo" foi desenhado para ser audível mesmo com o capacete fechado e ruído de trânsito intenso.
+                      </p>
+                   </div>
                 </div>
               )}
             </div>
