@@ -1,14 +1,15 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { DriverStatus, DeliveryMission, Transaction } from './types';
-import { COLORS, calculateEarnings, MOCK_STORES, MOCK_CUSTOMERS, weeklyPayouts, pastOrders } from './constants';
+import { DriverStatus, DeliveryMission, Transaction, NotificationModel, NotificationType } from './types';
+import { COLORS, calculateEarnings, MOCK_STORES, MOCK_CUSTOMERS, weeklyPayouts, pastOrders, MOCK_NOTIFICATIONS } from './constants';
 import { MapMock } from './components/MapMock';
 import { ActionSlider } from './components/ActionSlider';
 import { Logo } from './components/Logo';
 
-type Screen = 'HOME' | 'WALLET' | 'ORDERS' | 'SETTINGS' | 'WITHDRAWAL_REQUEST';
+type Screen = 'HOME' | 'WALLET' | 'ORDERS' | 'SETTINGS' | 'WITHDRAWAL_REQUEST' | 'NOTIFICATIONS' | 'FACIAL_VERIFICATION';
 type SettingsView = 'MAIN' | 'PERSONAL' | 'DOCUMENTS' | 'BANK' | 'EMERGENCY' | 'DELIVERY';
 type AuthScreen = 'LOGIN' | 'REGISTER' | 'RECOVERY' | 'VERIFICATION';
+type MapMode = 'standard' | 'satellite';
 
 const SOUND_OPTIONS = [
   { id: 'beep', label: 'Alerta Padrão', url: 'https://actions.google.com/sounds/v1/alarms/beep_short.ogg', icon: 'fa-bell' },
@@ -151,8 +152,18 @@ const App: React.FC = () => {
   const [lastEarnings, setLastEarnings] = useState(0);
   const [showBalance, setShowBalance] = useState(true);
   
-  // Estado Heatmap
+  // Estado de Sessão e Segurança
+  const [hasVerifiedSession, setHasVerifiedSession] = useState(false);
+  const [verificationStep, setVerificationStep] = useState<'START' | 'CAMERA' | 'PROCESSING' | 'SUCCESS' | 'FAILURE'>('START');
+  const [videoStream, setVideoStream] = useState<MediaStream | null>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  
+  // Estado Heatmap e Camadas
   const [showHeatMap, setShowHeatMap] = useState(true);
+  const [showLayersModal, setShowLayersModal] = useState(false);
+  const [mapMode, setMapMode] = useState<MapMode>('standard');
+  const [showTraffic, setShowTraffic] = useState(false);
   
   // Estado para Tabs da Wallet e Filtros
   const [walletTab, setWalletTab] = useState<'ENTRIES' | 'PAYOUTS'>('ENTRIES');
@@ -208,6 +219,10 @@ const App: React.FC = () => {
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [selectedSoundId, setSelectedSoundId] = useState('beep');
   
+  // Notificações
+  const [notifications, setNotifications] = useState<NotificationModel[]>(MOCK_NOTIFICATIONS);
+  const [notificationsSeen, setNotificationsSeen] = useState(false);
+  
   const alertAudioRef = useRef<HTMLAudioElement | null>(null);
 
   // Estatísticas e Financeiro
@@ -253,6 +268,15 @@ const App: React.FC = () => {
       // Browser might not support permission query, fallback to normal flow
     });
   }, []);
+
+  // Cleanup video stream on unmount
+  useEffect(() => {
+    return () => {
+      if (videoStream) {
+        videoStream.getTracks().forEach(track => track.stop());
+      }
+    };
+  }, [videoStream]);
 
   const toggleTheme = () => setTheme(prev => prev === 'dark' ? 'light' : 'dark');
 
@@ -311,23 +335,41 @@ const App: React.FC = () => {
     }
   };
 
-  const handleSOSAction = (type: 'accident' | 'mechanical' | 'robbery' | 'support') => {
+  const handleSOSAction = (type: 'police' | 'samu' | 'mechanic' | 'share') => {
     if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
+    
     switch(type) {
-      case 'accident':
-        if(confirm("Deseja ligar para o SAMU (192)?")) window.location.href = 'tel:192';
+      case 'police':
+        window.location.href = 'tel:190';
         break;
-      case 'robbery':
-        if(confirm("Deseja ligar para a POLÍCIA (190)?")) window.location.href = 'tel:190';
+      case 'samu':
+        window.location.href = 'tel:192';
         break;
-      case 'mechanical':
-        window.open('https://www.google.com/maps/search/oficina+mecanica+moto+perto+de+mim', '_blank');
+      case 'mechanic':
+        // Abre Google Maps buscando mecânicos próximos
+        window.open('https://www.google.com/maps/search/borracharia+mecanico+moto', '_blank');
         break;
-      case 'support':
-        window.open(`https://wa.me/5511999999999?text=Ajuda`, '_blank');
+      case 'share':
+        if (!navigator.geolocation) {
+           alert("GPS indisponível para compartilhar localização.");
+           return;
+        }
+        
+        navigator.geolocation.getCurrentPosition((pos) => {
+           const { latitude, longitude } = pos.coords;
+           const mapLink = `https://maps.google.com/?q=${latitude},${longitude}`;
+           const message = `SOS! Preciso de ajuda. Estou aqui: ${mapLink}`;
+           
+           // Abre WhatsApp com a mensagem preenchida
+           const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(message)}`;
+           window.open(whatsappUrl, '_blank');
+           
+           setShowSOSModal(false);
+        }, (err) => {
+           alert("Erro ao obter localização: " + err.message);
+        }, { enableHighAccuracy: true });
         break;
     }
-    setShowSOSModal(false);
   };
 
   const openNavigation = (provider: 'waze' | 'google', forcedAddress?: string) => {
@@ -445,32 +487,104 @@ const App: React.FC = () => {
     return () => clearInterval(interval);
   }, [status, alertCountdown]);
 
+  // Função core para processar o ganho e finalizar
+  const processDeliverySuccess = (currentMission: DeliveryMission) => {
+    const earned = currentMission.earnings;
+    setBalance(prev => prev + earned);
+    setDailyEarnings(prev => prev + earned);
+    setLastEarnings(earned);
+    setDailyStats(prev => ({ ...prev, finished: prev.finished + 1 }));
+    setStatus(DriverStatus.ONLINE);
+    setMission(null);
+    setShowPostDeliveryModal(true);
+    
+    const newTransaction: Transaction = {
+      id: Math.random().toString(36).substr(2, 9),
+      type: `Entrega #${currentMission.id}`,
+      amount: earned,
+      time: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+      date: 'Hoje',
+      weekId: 'current',
+      status: 'COMPLETED',
+      details: {
+        duration: '15 min',
+        stops: 2,
+        timeline: generateTimeline(new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }))
+      }
+    };
+    setHistory(prev => [newTransaction, ...prev]);
+  };
+
   const handleFinishDelivery = () => {
-    if (mission) {
-      const earned = mission.earnings;
-      setBalance(prev => prev + earned);
-      setDailyEarnings(prev => prev + earned);
-      setLastEarnings(earned);
-      setDailyStats(prev => ({ ...prev, finished: prev.finished + 1 }));
-      setStatus(DriverStatus.ONLINE);
-      setMission(null);
-      setShowPostDeliveryModal(true);
+    if (!mission) return;
+
+    // Lógica de Segurança: Verificar identidade se for a primeira entrega da sessão
+    if (!hasVerifiedSession) {
+      setVerificationStep('START');
+      setCurrentScreen('FACIAL_VERIFICATION');
+      return;
+    }
+
+    // Se já verificado, prossegue normal
+    processDeliverySuccess(mission);
+  };
+
+  // Facial Verification Handlers
+  const startCamera = async () => {
+    setVerificationStep('CAMERA');
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
+      setVideoStream(stream);
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        videoRef.current.play();
+      }
       
-      const newTransaction: Transaction = {
-        id: Math.random().toString(36).substr(2, 9),
-        type: `Entrega #${mission.id}`,
-        amount: earned,
-        time: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
-        date: 'Hoje',
-        weekId: 'current',
-        status: 'COMPLETED',
-        details: {
-          duration: '15 min',
-          stops: 2,
-          timeline: generateTimeline(new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }))
+      // Simulate Liveness Detection Flow
+      setTimeout(() => {
+        // Change instruction to "SMILE"
+        const instruction = document.getElementById('camera-instruction');
+        if (instruction) instruction.innerText = "Agora, dê um sorriso!";
+        
+        // Capture after a delay
+        setTimeout(() => {
+           captureAndVerify();
+        }, 2000);
+      }, 2500);
+
+    } catch (err) {
+      console.error("Camera Error: ", err);
+      alert("Erro ao acessar a câmera. Verifique as permissões.");
+      setVerificationStep('START');
+    }
+  };
+
+  const captureAndVerify = () => {
+    if (videoRef.current && canvasRef.current) {
+      const context = canvasRef.current.getContext('2d');
+      if (context) {
+        context.drawImage(videoRef.current, 0, 0, canvasRef.current.width, canvasRef.current.height);
+        
+        // Stop stream
+        if (videoStream) {
+          videoStream.getTracks().forEach(track => track.stop());
+          setVideoStream(null);
         }
-      };
-      setHistory(prev => [newTransaction, ...prev]);
+        
+        setVerificationStep('PROCESSING');
+        
+        // Simulate Backend Processing
+        setTimeout(() => {
+          setVerificationStep('SUCCESS');
+          setHasVerifiedSession(true);
+          
+          setTimeout(() => {
+             // Return to map and finish delivery logic
+             setCurrentScreen('HOME');
+             if (mission) processDeliverySuccess(mission);
+          }, 1500);
+        }, 2000);
+      }
     }
   };
 
@@ -590,6 +704,8 @@ const App: React.FC = () => {
       
       // Login Sucesso
       setIsAuthenticated(true);
+      // Reset verification for new session
+      setHasVerifiedSession(false);
     }, 1500);
   };
 
@@ -663,6 +779,31 @@ const App: React.FC = () => {
       alert(`Link de recuperação enviado para: ${recoveryInput}`);
       setAuthScreen('LOGIN');
     }, 1500);
+  };
+  
+  // Notification Logic
+  const unreadCount = notifications.filter(n => !n.read).length;
+  
+  const handleOpenNotifications = () => {
+    setCurrentScreen('NOTIFICATIONS');
+    setNotificationsSeen(true);
+  };
+  
+  const markAllNotificationsRead = () => {
+    setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+  };
+  
+  const deleteNotification = (id: string) => {
+    setNotifications(prev => prev.filter(n => n.id !== id));
+  };
+
+  const getNotificationIcon = (type: NotificationType) => {
+    switch(type) {
+      case NotificationType.FINANCIAL: return { icon: 'fa-sack-dollar', color: 'text-green-500', bg: 'bg-green-500/10' };
+      case NotificationType.URGENT: return { icon: 'fa-triangle-exclamation', color: 'text-red-500', bg: 'bg-red-500/10' };
+      case NotificationType.PROMOTION: return { icon: 'fa-fire', color: 'text-[#FF6B00]', bg: 'bg-[#FF6B00]/10' };
+      case NotificationType.SYSTEM: return { icon: 'fa-circle-info', color: 'text-zinc-400', bg: 'bg-zinc-500/10' };
+    }
   };
 
   const renderAuthScreen = () => {
@@ -860,10 +1001,12 @@ const App: React.FC = () => {
                 theme={theme}
                 showRoute={status !== DriverStatus.OFFLINE && status !== DriverStatus.ONLINE && status !== DriverStatus.ALERTING} 
                 showHeatMap={showHeatMap}
+                mapMode={mapMode}
+                showTraffic={showTraffic}
               />
               
               <div className="absolute right-4 bottom-24 flex flex-col space-y-3 z-[1001]">
-                {/* Botão de Filtros (Atualizado com mesmo estilo do GPS) */}
+                {/* Botão de Filtros */}
                 <button 
                   onClick={() => setShowFiltersModal(true)} 
                   className={`w-12 h-12 rounded-2xl shadow-2xl flex items-center justify-center text-[#FF6B00] border active:scale-90 transition-transform relative ${cardBg}`}
@@ -872,10 +1015,10 @@ const App: React.FC = () => {
                   {isFilterActive && <div className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full border-2 border-white dark:border-black"></div>}
                 </button>
 
-                {/* Botão de Toggle de Mapa de Calor (NOVO) */}
+                {/* Botão de Camadas (Layers) - Atualizado */}
                 <button 
-                  onClick={() => setShowHeatMap(!showHeatMap)} 
-                  className={`w-12 h-12 rounded-2xl shadow-2xl flex items-center justify-center border active:scale-90 transition-transform ${cardBg} ${showHeatMap ? 'text-[#FF6B00]' : textMuted}`}
+                  onClick={() => setShowLayersModal(true)} 
+                  className={`w-12 h-12 rounded-2xl shadow-2xl flex items-center justify-center border active:scale-90 transition-transform ${cardBg} ${showHeatMap || showTraffic || mapMode === 'satellite' ? 'text-[#FF6B00] border-[#FF6B00]/30' : textMuted}`}
                 >
                   <i className="fas fa-layer-group text-lg"></i>
                 </button>
@@ -994,7 +1137,7 @@ const App: React.FC = () => {
                           <i className="fas fa-location-arrow text-[10px]"></i>
                           <span>GPS</span>
                         </button>
-                        <button onClick={() => handleSOSAction('support')} className={`w-9 h-9 rounded-xl flex items-center justify-center text-[#FF6B00] ${innerBg}`}><i className="fas fa-headset text-xs"></i></button>
+                        <button onClick={() => setShowSOSModal(true)} className={`w-9 h-9 rounded-xl flex items-center justify-center text-[#FF6B00] ${innerBg}`}><i className="fas fa-headset text-xs"></i></button>
                       </div>
                     </div>
 
@@ -1100,10 +1243,171 @@ const App: React.FC = () => {
                   </div>
                </div>
             )}
+            
+            {/* Modal de Camadas do Mapa */}
+            {showLayersModal && (
+               <div className="absolute inset-0 bg-black/80 z-[6000] flex items-end sm:items-center justify-center p-0 sm:p-6 backdrop-blur-sm animate-in fade-in duration-300">
+                  <div className={`w-full max-w-sm rounded-t-[40px] sm:rounded-[40px] p-8 border-t border-white/10 shadow-2xl animate-in slide-in-from-bottom duration-300 pb-12 ${cardBg}`}>
+                     <div className="flex justify-between items-center mb-8">
+                        <h2 className={`text-2xl font-black italic ${textPrimary}`}>Camadas do Mapa</h2>
+                        <button onClick={() => setShowLayersModal(false)} className={`w-10 h-10 rounded-full flex items-center justify-center ${innerBg} ${textMuted} active:scale-90 transition-transform`}>
+                           <i className="fas fa-times text-lg"></i>
+                        </button>
+                     </div>
+
+                     <div className="space-y-4">
+                        {/* Heatmap Toggle */}
+                        <div className={`p-5 rounded-[28px] border border-white/5 flex items-center justify-between cursor-pointer transition-colors ${showHeatMap ? 'bg-[#FF6B00]/10 border-[#FF6B00]/30' : innerBg}`} onClick={() => setShowHeatMap(!showHeatMap)}>
+                           <div className="flex items-center space-x-4">
+                              <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${showHeatMap ? 'bg-[#FF6B00] text-white' : 'bg-zinc-700/50 text-zinc-500'}`}>
+                                 <i className="fas fa-fire"></i>
+                              </div>
+                              <div>
+                                 <h3 className={`text-sm font-black uppercase tracking-wide ${textPrimary}`}>Zonas de Alta Demanda</h3>
+                                 <p className={`text-[9px] font-bold ${textMuted}`}>Visualizar Heatmap</p>
+                              </div>
+                           </div>
+                           <div className={`w-11 h-6 rounded-full relative transition-colors ${showHeatMap ? 'bg-[#FF6B00]' : 'bg-zinc-700'}`}>
+                              <div className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full transition-transform ${showHeatMap ? 'translate-x-5' : ''}`}></div>
+                           </div>
+                        </div>
+
+                        {/* Traffic Toggle */}
+                        <div className={`p-5 rounded-[28px] border border-white/5 flex items-center justify-between cursor-pointer transition-colors ${showTraffic ? 'bg-red-500/10 border-red-500/30' : innerBg}`} onClick={() => setShowTraffic(!showTraffic)}>
+                           <div className="flex items-center space-x-4">
+                              <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${showTraffic ? 'bg-red-500 text-white' : 'bg-zinc-700/50 text-zinc-500'}`}>
+                                 <i className="fas fa-traffic-light"></i>
+                              </div>
+                              <div>
+                                 <h3 className={`text-sm font-black uppercase tracking-wide ${textPrimary}`}>Trânsito em Tempo Real</h3>
+                                 <p className={`text-[9px] font-bold ${textMuted}`}>Camada de Tráfego</p>
+                              </div>
+                           </div>
+                           <div className={`w-11 h-6 rounded-full relative transition-colors ${showTraffic ? 'bg-red-500' : 'bg-zinc-700'}`}>
+                              <div className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full transition-transform ${showTraffic ? 'translate-x-5' : ''}`}></div>
+                           </div>
+                        </div>
+
+                        {/* Satellite Toggle */}
+                        <div className={`p-5 rounded-[28px] border border-white/5 flex items-center justify-between cursor-pointer transition-colors ${mapMode === 'satellite' ? 'bg-[#33CCFF]/10 border-[#33CCFF]/30' : innerBg}`} onClick={() => setMapMode(prev => prev === 'standard' ? 'satellite' : 'standard')}>
+                           <div className="flex items-center space-x-4">
+                              <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${mapMode === 'satellite' ? 'bg-[#33CCFF] text-white' : 'bg-zinc-700/50 text-zinc-500'}`}>
+                                 <i className="fas fa-satellite"></i>
+                              </div>
+                              <div>
+                                 <h3 className={`text-sm font-black uppercase tracking-wide ${textPrimary}`}>Modo Satélite</h3>
+                                 <p className={`text-[9px] font-bold ${textMuted}`}>Visão Aérea</p>
+                              </div>
+                           </div>
+                           <div className={`w-11 h-6 rounded-full relative transition-colors ${mapMode === 'satellite' ? 'bg-[#33CCFF]' : 'bg-zinc-700'}`}>
+                              <div className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full transition-transform ${mapMode === 'satellite' ? 'translate-x-5' : ''}`}></div>
+                           </div>
+                        </div>
+                     </div>
+                  </div>
+               </div>
+            )}
+          </div>
+        );
+      case 'FACIAL_VERIFICATION':
+        return (
+          <div className={`h-full w-full relative overflow-hidden flex flex-col items-center justify-center p-6 ${theme === 'dark' ? 'bg-black' : 'bg-zinc-900'}`}>
+             
+             {/* Header */}
+             <div className="absolute top-6 left-0 right-0 text-center z-20">
+                <i className="fas fa-shield-halved text-[#FF6B00] text-3xl mb-2"></i>
+                <h1 className="text-xl font-black text-white italic uppercase tracking-wider">Verificação de Identidade</h1>
+                <p className="text-zinc-400 text-xs font-bold mt-1">Check de Segurança Obrigatório</p>
+             </div>
+
+             {/* Main Content Area */}
+             <div className="relative w-full max-w-sm flex flex-col items-center z-10">
+                
+                {verificationStep === 'START' && (
+                   <div className="text-center animate-in fade-in zoom-in duration-300">
+                      <div className="w-64 h-64 rounded-full border-4 border-dashed border-zinc-700 flex items-center justify-center mb-8 mx-auto bg-zinc-800/50">
+                         <i className="fas fa-user-lock text-6xl text-zinc-500"></i>
+                      </div>
+                      <p className="text-zinc-300 text-sm font-bold leading-relaxed mb-8 px-4">
+                         Para sua segurança e evitar fraudes, precisamos confirmar que é você realizando as entregas.
+                      </p>
+                      <button 
+                        onClick={startCamera}
+                        className="w-full h-16 bg-[#FF6B00] rounded-2xl font-black text-white uppercase tracking-widest shadow-lg shadow-orange-900/30 active:scale-95 transition-transform flex items-center justify-center space-x-3"
+                      >
+                         <i className="fas fa-camera"></i>
+                         <span>Iniciar Verificação</span>
+                      </button>
+                   </div>
+                )}
+
+                {verificationStep === 'CAMERA' && (
+                   <div className="flex flex-col items-center w-full animate-in fade-in duration-300">
+                      {/* Circular Camera Mask */}
+                      <div className="relative w-72 h-72 rounded-full overflow-hidden border-4 border-[#FF6B00] shadow-[0_0_50px_rgba(255,107,0,0.3)] mb-8 bg-black">
+                         <video 
+                           ref={videoRef}
+                           autoPlay 
+                           playsInline 
+                           muted 
+                           className="w-full h-full object-cover transform scale-x-[-1]" // Mirror effect
+                         />
+                         {/* Scanning Overlay Effect */}
+                         <div className="absolute inset-0 bg-gradient-to-b from-transparent via-[#FF6B00]/20 to-transparent animate-[pulse_2s_infinite] pointer-events-none"></div>
+                         <canvas ref={canvasRef} className="hidden w-full h-full"></canvas>
+                      </div>
+
+                      <div className="text-center space-y-2">
+                         <div className="inline-flex items-center justify-center px-4 py-2 bg-zinc-800 rounded-full border border-zinc-700">
+                            <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse mr-2"></div>
+                            <span className="text-[10px] font-black text-white uppercase tracking-widest">Ao Vivo</span>
+                         </div>
+                         <h3 id="camera-instruction" className="text-2xl font-black text-white italic mt-4 min-h-[40px]">
+                            Centralize seu rosto
+                         </h3>
+                      </div>
+                   </div>
+                )}
+
+                {verificationStep === 'PROCESSING' && (
+                   <div className="text-center animate-in fade-in duration-300">
+                      <div className="w-72 h-72 rounded-full border-4 border-zinc-800 flex flex-col items-center justify-center mb-8 mx-auto relative overflow-hidden bg-black">
+                         <div className="absolute inset-0 flex items-center justify-center">
+                            <i className="fas fa-fingerprint text-8xl text-zinc-800 animate-pulse"></i>
+                         </div>
+                         <div className="absolute inset-0 bg-gradient-to-t from-[#FF6B00]/20 to-transparent animate-[spin_3s_linear_infinite]"></div>
+                      </div>
+                      <h3 className="text-xl font-black text-white italic mb-2">Validando Biometria...</h3>
+                      <p className="text-zinc-500 text-xs font-bold uppercase tracking-widest">Não feche o aplicativo</p>
+                   </div>
+                )}
+
+                {verificationStep === 'SUCCESS' && (
+                   <div className="text-center animate-in zoom-in duration-300">
+                      <div className="w-32 h-32 rounded-full bg-green-500 flex items-center justify-center mb-6 mx-auto shadow-2xl shadow-green-900/50">
+                         <i className="fas fa-check text-5xl text-white"></i>
+                      </div>
+                      <h3 className="text-2xl font-black text-white italic mb-2">Identidade Confirmada!</h3>
+                      <p className="text-zinc-400 text-xs font-bold uppercase tracking-widest mb-8">Sessão validada com sucesso.</p>
+                   </div>
+                )}
+
+             </div>
+
+             {/* Background Effects */}
+             <div className="absolute inset-0 pointer-events-none opacity-20">
+                <div className="absolute top-0 left-0 w-full h-1/2 bg-gradient-to-b from-[#FF6B00]/20 to-transparent"></div>
+                <div className="absolute bottom-0 left-0 w-full h-1/2 bg-gradient-to-t from-black to-transparent"></div>
+             </div>
           </div>
         );
       case 'WALLET':
+        // ... (rest of Wallet switch case code remains unchanged, implied by context structure)
         const filteredHistory = history.filter(item => item.weekId === activeWeekId);
+        // ... (Truncated for brevity as requested only changes are needed, but sticking to file replacement format)
+        // Since I have to replace the WHOLE file content, I must paste the rest of the file content here.
+        // Re-pasting the existing WALLET, WITHDRAWAL_REQUEST, ORDERS, NOTIFICATIONS, SETTINGS cases below.
+        
         const weeklyEarningsTotal = filteredHistory.reduce((acc, item) => acc + (item.amount > 0 ? item.amount : 0), 0) + (activeWeekId === 'current' ? dailyEarnings : 0);
         const activeWeekLabel = MOCK_WEEKS.find(w => w.id === activeWeekId)?.range || 'Semana Atual';
 
@@ -1338,6 +1642,69 @@ const App: React.FC = () => {
                 ))}
               </div>
             </div>
+        </div>
+      );
+      case 'NOTIFICATIONS': return (
+        <div className={`h-full w-full p-6 overflow-y-auto pb-24 transition-colors duration-300 ${theme === 'dark' ? 'bg-black' : 'bg-zinc-50'}`}>
+            <div className="flex items-center justify-between mb-8">
+              <div className="flex items-center space-x-4">
+                 <button onClick={() => setCurrentScreen('HOME')} className={`w-10 h-10 rounded-xl flex items-center justify-center border ${cardBg}`}>
+                   <i className={`fas fa-chevron-left ${textPrimary}`}></i>
+                 </button>
+                 <h1 className={`text-2xl font-black italic ${textPrimary}`}>Avisos</h1>
+              </div>
+              <button 
+                onClick={markAllNotificationsRead}
+                className={`text-[10px] font-black uppercase tracking-widest text-[#FF6B00] active:scale-95 transition-transform`}
+              >
+                 Marcar todas como lidas
+              </button>
+            </div>
+
+            {notifications.length === 0 ? (
+               <div className="flex flex-col items-center justify-center h-64 text-center opacity-50">
+                  <div className={`w-20 h-20 rounded-full flex items-center justify-center mb-4 ${innerBg}`}>
+                     <i className="fas fa-bell-slash text-2xl text-zinc-500"></i>
+                  </div>
+                  <p className={`text-sm font-bold ${textMuted}`}>Você não tem notificações no momento.</p>
+               </div>
+            ) : (
+               <div className="space-y-4 animate-in slide-in-from-bottom-4 duration-500">
+                  {notifications.map((notification) => {
+                     const style = getNotificationIcon(notification.type);
+                     return (
+                        <div 
+                           key={notification.id} 
+                           className={`p-5 rounded-[28px] border relative transition-all duration-300 group ${cardBg} ${!notification.read ? 'border-[#FF6B00]/30 bg-[#FF6B00]/5' : ''}`}
+                        >
+                           <div className="flex items-start space-x-4 relative z-10">
+                              <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 ${style.bg} ${style.color}`}>
+                                 <i className={`fas ${style.icon} text-lg`}></i>
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                 <div className="flex justify-between items-start">
+                                    <h3 className={`text-sm font-black ${textPrimary} mb-1 truncate pr-2`}>{notification.title}</h3>
+                                    {!notification.read && <div className="w-2 h-2 rounded-full bg-[#FF6B00] shrink-0 mt-1.5"></div>}
+                                 </div>
+                                 <p className={`text-xs leading-relaxed mb-2 line-clamp-2 ${textMuted}`}>{notification.body}</p>
+                                 <p className={`text-[9px] font-bold uppercase tracking-widest opacity-60 ${textPrimary}`}>{notification.date}</p>
+                              </div>
+                           </div>
+
+                           {/* Delete Button (Simulating Swipe Action area on right) */}
+                           <div className="absolute top-4 right-4">
+                              <button 
+                                onClick={(e) => { e.stopPropagation(); deleteNotification(notification.id); }}
+                                className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors hover:bg-red-500/10 active:scale-90 ${textMuted} hover:text-red-500`}
+                              >
+                                 <i className="fas fa-trash text-xs"></i>
+                              </button>
+                           </div>
+                        </div>
+                     );
+                  })}
+               </div>
+            )}
         </div>
       );
       case 'SETTINGS': 
@@ -1615,6 +1982,7 @@ const App: React.FC = () => {
 
   return (
     <div className={`h-screen w-screen flex flex-col relative overflow-hidden transition-colors duration-300 ${theme === 'dark' ? 'bg-black text-white' : 'bg-zinc-50 text-zinc-900'}`}>
+      {currentScreen !== 'FACIAL_VERIFICATION' && (
       <header className={`z-[1002] flex flex-col items-center justify-between backdrop-blur-2xl border-b transition-colors duration-300 ${theme === 'dark' ? 'bg-zinc-950/80 border-white/5' : 'bg-white/80 border-zinc-200'}`}>
         {/* Top Row */}
         <div className="w-full px-6 py-4 flex items-center justify-between relative h-20">
@@ -1635,10 +2003,17 @@ const App: React.FC = () => {
             </div>
 
             {/* Right: Notification Bell */}
-            <button className={`w-10 h-10 rounded-2xl flex items-center justify-center transition-all active:scale-95 ${cardBg} border shadow-lg`}>
+            <button 
+              onClick={handleOpenNotifications}
+              className={`w-10 h-10 rounded-2xl flex items-center justify-center transition-all active:scale-95 ${cardBg} border shadow-lg relative`}
+            >
                 <div className="relative">
                     <i className={`fas fa-bell text-lg ${textPrimary}`}></i>
-                    <div className="absolute -top-1 -right-0.5 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-black"></div>
+                    {unreadCount > 0 && !notificationsSeen && (
+                       <div className="absolute -top-2 -right-2 w-4 h-4 bg-red-500 rounded-full border-2 border-black flex items-center justify-center">
+                          <span className="text-[9px] font-black text-white">{unreadCount}</span>
+                       </div>
+                    )}
                 </div>
             </button>
         </div>
@@ -1662,16 +2037,93 @@ const App: React.FC = () => {
              )}
         </div>
       </header>
+      )}
       <main className="flex-1 relative overflow-hidden">{renderScreen()}</main>
+      {currentScreen !== 'FACIAL_VERIFICATION' && (
       <nav className={`h-24 border-t flex items-center justify-around z-[1002] safe-area-bottom transition-colors duration-300 ${theme === 'dark' ? 'bg-zinc-950 border-white/5' : 'bg-white border-zinc-200'}`}>
         <button onClick={() => setCurrentScreen('HOME')} className={`flex flex-col items-center space-y-1 w-1/4 relative ${currentScreen === 'HOME' ? 'text-[#FF6B00]' : textMuted}`}><div className={`w-10 h-1 bg-[#FF6B00] absolute -top-10 rounded-b-full transition-all ${currentScreen === 'HOME' ? 'opacity-100 scale-100' : 'opacity-0 scale-0'}`}></div><i className="fas fa-compass text-xl"></i><span className="text-[8px] font-black uppercase tracking-widest">Mapa</span></button>
         <button onClick={() => setCurrentScreen('WALLET')} className={`flex flex-col items-center space-y-1 w-1/4 relative ${currentScreen === 'WALLET' ? 'text-[#FF6B00]' : textMuted}`}><div className={`w-10 h-1 bg-[#FF6B00] absolute -top-10 rounded-b-full transition-all ${currentScreen === 'WALLET' ? 'opacity-100 scale-100' : 'opacity-0 scale-0'}`}></div><i className="fas fa-wallet text-xl"></i><span className="text-[8px] font-black uppercase tracking-widest">Ganhos</span></button>
         <button onClick={() => setCurrentScreen('ORDERS')} className={`flex flex-col items-center space-y-1 w-1/4 relative ${currentScreen === 'ORDERS' ? 'text-[#FF6B00]' : textMuted}`}><div className={`w-10 h-1 bg-[#FF6B00] absolute -top-10 rounded-b-full transition-all ${currentScreen === 'ORDERS' ? 'opacity-100 scale-100' : 'opacity-0 scale-0'}`}></div><i className="fas fa-circle-question text-xl"></i><span className="text-[8px] font-black uppercase tracking-widest">Ajuda</span></button>
         <button onClick={() => setCurrentScreen('SETTINGS')} className={`flex flex-col items-center space-y-1 w-1/4 relative ${currentScreen === 'SETTINGS' ? 'text-[#FF6B00]' : textMuted}`}><div className={`w-10 h-1 bg-[#FF6B00] absolute -top-10 rounded-b-full transition-all ${currentScreen === 'SETTINGS' ? 'opacity-100 scale-100' : 'opacity-0 scale-0'}`}></div><i className="fas fa-user-gear text-xl"></i><span className="text-[8px] font-black uppercase tracking-widest">Perfil</span></button>
       </nav>
+      )}
 
-      {/* MODALS GERAIS (SOS, FILTROS, SUCESSO) */}
-      {/* ... Manter os modais existentes ... */}
+      {/* MODAL SOS (BOTTOM SHEET) */}
+      {showSOSModal && (
+        <div className="absolute inset-0 bg-black/80 z-[6000] flex items-end justify-center backdrop-blur-xl animate-in fade-in duration-300">
+           <div className={`w-full bg-[#1E1E1E] rounded-t-[40px] p-6 pb-12 animate-in slide-in-from-bottom duration-500 shadow-2xl border-t border-white/10`}>
+              <div className="flex justify-between items-center mb-6 px-2">
+                 <div>
+                    <h2 className="text-2xl font-black italic text-white tracking-tight">Central de Emergência</h2>
+                    <p className="text-zinc-500 text-[10px] font-bold uppercase tracking-widest">Você precisa de ajuda imediata?</p>
+                 </div>
+                 <button onClick={() => setShowSOSModal(false)} className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center text-zinc-400 active:scale-90 transition-transform">
+                    <i className="fas fa-chevron-down"></i>
+                 </button>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                 {/* POLÍCIA (190) */}
+                 <button 
+                  onClick={() => handleSOSAction('police')}
+                  className="bg-red-900/20 border border-red-500/30 p-6 rounded-[32px] flex flex-col items-center justify-center space-y-3 active:scale-95 transition-transform group"
+                 >
+                    <div className="w-16 h-16 rounded-full bg-red-600 flex items-center justify-center shadow-lg shadow-red-900/50 group-hover:scale-110 transition-transform">
+                       <i className="fas fa-shield-halved text-2xl text-white"></i>
+                    </div>
+                    <div className="text-center">
+                       <h3 className="text-white font-black text-lg">POLÍCIA</h3>
+                       <p className="text-red-400 font-bold text-sm">Ligar 190</p>
+                    </div>
+                 </button>
+
+                 {/* SAMU (192) */}
+                 <button 
+                  onClick={() => handleSOSAction('samu')}
+                  className="bg-red-900/20 border border-red-500/30 p-6 rounded-[32px] flex flex-col items-center justify-center space-y-3 active:scale-95 transition-transform group"
+                 >
+                    <div className="w-16 h-16 rounded-full bg-red-600 flex items-center justify-center shadow-lg shadow-red-900/50 group-hover:scale-110 transition-transform">
+                       <i className="fas fa-truck-medical text-2xl text-white"></i>
+                    </div>
+                    <div className="text-center">
+                       <h3 className="text-white font-black text-lg">SAMU</h3>
+                       <p className="text-red-400 font-bold text-sm">Ligar 192</p>
+                    </div>
+                 </button>
+
+                 {/* Compartilhar Localização */}
+                 <button 
+                  onClick={() => handleSOSAction('share')}
+                  className="bg-zinc-800/50 border border-white/5 p-6 rounded-[32px] flex flex-col items-center justify-center space-y-3 active:scale-95 transition-transform group"
+                 >
+                    <div className="w-14 h-14 rounded-full bg-green-600 flex items-center justify-center shadow-lg shadow-green-900/30 group-hover:scale-110 transition-transform">
+                       <i className="fab fa-whatsapp text-2xl text-white"></i>
+                    </div>
+                    <div className="text-center">
+                       <h3 className="text-white font-black text-sm uppercase">Compartilhar</h3>
+                       <p className="text-zinc-500 font-bold text-[10px]">Enviar Localização</p>
+                    </div>
+                 </button>
+
+                 {/* Mecânico Próximo */}
+                 <button 
+                  onClick={() => handleSOSAction('mechanic')}
+                  className="bg-zinc-800/50 border border-white/5 p-6 rounded-[32px] flex flex-col items-center justify-center space-y-3 active:scale-95 transition-transform group"
+                 >
+                    <div className="w-14 h-14 rounded-full bg-[#FF6B00] flex items-center justify-center shadow-lg shadow-orange-900/30 group-hover:scale-110 transition-transform">
+                       <i className="fas fa-wrench text-2xl text-white"></i>
+                    </div>
+                    <div className="text-center">
+                       <h3 className="text-white font-black text-sm uppercase">Mecânico</h3>
+                       <p className="text-zinc-500 font-bold text-[10px]">Buscar Próximo</p>
+                    </div>
+                 </button>
+              </div>
+           </div>
+        </div>
+      )}
+
+      {/* MODAIS EXISTENTES (Filtros, Sucesso, etc) - Mantidos abaixo */}
       {showPostDeliveryModal && (
         <div className="absolute inset-0 z-[6000] bg-black/90 backdrop-blur-xl flex items-center justify-center p-8">
            <div className="w-full max-w-xs text-center animate-in zoom-in duration-300">

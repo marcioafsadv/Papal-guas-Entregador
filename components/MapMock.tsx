@@ -6,20 +6,39 @@ interface MapMockProps {
   status: string;
   showRoute?: boolean;
   theme?: 'dark' | 'light';
+  showHeatMap?: boolean;
+  mapMode?: 'standard' | 'satellite';
+  showTraffic?: boolean;
 }
 
-export const MapMock: React.FC<MapMockProps> = ({ status, showRoute = false, theme = 'dark' }) => {
+export const MapMock: React.FC<MapMockProps> = ({ 
+  status, 
+  showRoute = false, 
+  theme = 'dark',
+  showHeatMap = false,
+  mapMode = 'standard',
+  showTraffic = false
+}) => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<any>(null);
   const tileLayerRef = useRef<any>(null);
   const driverMarkerRef = useRef<any>(null);
   const destinationMarkerRef = useRef<any>(null);
+  const heatMapLayerRef = useRef<any>(null); // LayerGroup for heat circles
+  const trafficLayerRef = useRef<any>(null); // LayerGroup for traffic lines
 
-  // Fix: Accept string to handle potential narrowing issues with literal types from props
-  const getTileUrl = (t: string) => 
-    t === 'dark' 
+  // Tile Provider URLs
+  const getTileUrl = (t: string, mode: string) => {
+    if (mode === 'satellite') {
+       // Esri World Imagery (Satellite)
+       return 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
+    }
+    
+    // Standard Mode (Dark or Voyager)
+    return t === 'dark' 
       ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
       : 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png';
+  };
 
   useEffect(() => {
     if (!mapContainerRef.current || mapRef.current) return;
@@ -32,8 +51,7 @@ export const MapMock: React.FC<MapMockProps> = ({ status, showRoute = false, the
       attributionControl: false,
     }).setView([-23.5505, -46.6333], 15);
 
-    // Fix: getTileUrl now accepts the theme variable correctly
-    tileLayerRef.current = L.tileLayer(getTileUrl(theme), {
+    tileLayerRef.current = L.tileLayer(getTileUrl(theme, mapMode), {
       maxZoom: 19
     }).addTo(mapRef.current);
 
@@ -68,14 +86,95 @@ export const MapMock: React.FC<MapMockProps> = ({ status, showRoute = false, the
     };
   }, []);
 
-  // Update Tile Layer when theme changes
+  // Update Base Tile Layer when theme or mode changes
   useEffect(() => {
     if (tileLayerRef.current && mapRef.current) {
-      // Fix: getTileUrl correctly handles the theme change
-      tileLayerRef.current.setUrl(getTileUrl(theme));
+      tileLayerRef.current.setUrl(getTileUrl(theme, mapMode));
     }
-  }, [theme]);
+  }, [theme, mapMode]);
 
+  // Handle Heatmap Visualization
+  useEffect(() => {
+    if (!mapRef.current) return;
+    const L = (window as any).L;
+    
+    // Clear existing heat layer
+    if (heatMapLayerRef.current) {
+      mapRef.current.removeLayer(heatMapLayerRef.current);
+      heatMapLayerRef.current = null;
+    }
+
+    if (showHeatMap) {
+      // Simulate High Demand Zones with Circles
+      const center = mapRef.current.getCenter();
+      const circles = [];
+      
+      // Create 5 random "hotspots" near the center
+      for (let i = 0; i < 5; i++) {
+        const lat = center.lat + (Math.random() - 0.5) * 0.02;
+        const lng = center.lng + (Math.random() - 0.5) * 0.02;
+        
+        circles.push(
+           L.circle([lat, lng], {
+             color: 'transparent',
+             fillColor: '#FF6B00',
+             fillOpacity: 0.3,
+             radius: 300 + Math.random() * 200
+           })
+        );
+         circles.push(
+           L.circle([lat, lng], {
+             color: 'transparent',
+             fillColor: '#FFD700',
+             fillOpacity: 0.4,
+             radius: 100 + Math.random() * 50
+           })
+        );
+      }
+      
+      heatMapLayerRef.current = L.layerGroup(circles).addTo(mapRef.current);
+    }
+  }, [showHeatMap, mapRef.current]);
+
+  // Handle Traffic Visualization
+  useEffect(() => {
+    if (!mapRef.current) return;
+    const L = (window as any).L;
+    
+    // Clear existing traffic layer
+    if (trafficLayerRef.current) {
+      mapRef.current.removeLayer(trafficLayerRef.current);
+      trafficLayerRef.current = null;
+    }
+
+    if (showTraffic) {
+      // Simulate Traffic with Polylines (Mocking congested streets)
+      const center = mapRef.current.getCenter();
+      const lines = [];
+
+      // Create random "streets"
+      for(let i=0; i<8; i++) {
+         const startLat = center.lat + (Math.random() - 0.5) * 0.03;
+         const startLng = center.lng + (Math.random() - 0.5) * 0.03;
+         const endLat = startLat + (Math.random() - 0.5) * 0.01;
+         const endLng = startLng + (Math.random() - 0.5) * 0.01;
+
+         lines.push(
+            L.polyline([[startLat, startLng], [endLat, endLng]], {
+               color: 'red',
+               weight: 5,
+               opacity: 0.6,
+               smoothFactor: 1
+            })
+         );
+      }
+
+      trafficLayerRef.current = L.layerGroup(lines).addTo(mapRef.current);
+    }
+  }, [showTraffic, mapRef.current]);
+
+
+  // Handle Route and Markers Logic (Existing)
   useEffect(() => {
     if (!mapRef.current) return;
     const L = (window as any).L;

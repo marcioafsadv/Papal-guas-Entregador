@@ -1,5 +1,6 @@
 
 import React from 'react';
+import { NotificationModel, NotificationType } from './types';
 
 export const COLORS = {
   primary: '#FF6B00', // Papaléguas Orange
@@ -106,4 +107,39 @@ export const pastOrders = [
   { id: 'PL-9801', store: 'Burguer King - Itu', value: 12.40, date: 'Hoje, 14:20', status: 'ENTREGUE', summary: '1x Whopper + Batata' },
   { id: 'PL-9788', store: 'Big Lanches', value: 18.20, date: 'Ontem, 13:15', status: 'ENTREGUE', summary: '2x X-Tudo' },
   { id: 'PL-9750', store: 'Tonilu Café', value: 9.90, date: '21/10, 12:05', status: 'ENTREGUE', summary: '1x Almoço Executivo' },
+];
+
+export const MOCK_NOTIFICATIONS: NotificationModel[] = [
+  {
+    id: '1',
+    type: NotificationType.FINANCIAL,
+    title: 'Nova Gorjeta Recebida',
+    body: 'Você recebeu uma gorjeta de R$ 5,00 na entrega #PL-9801. Continue assim!',
+    date: 'Hoje, 14:30',
+    read: false
+  },
+  {
+    id: '2',
+    type: NotificationType.URGENT,
+    title: 'Atenção ao seu Documento',
+    body: 'Sua CNH vence em 15 dias. Atualize seus dados para continuar recebendo rotas.',
+    date: 'Hoje, 09:00',
+    read: false
+  },
+  {
+    id: '3',
+    type: NotificationType.PROMOTION,
+    title: 'Missão Noturna',
+    body: 'Ganhe +20% em todas as entregas realizadas na região Central hoje entre 18h e 22h.',
+    date: 'Ontem, 16:00',
+    read: true
+  },
+  {
+    id: '4',
+    type: NotificationType.SYSTEM,
+    title: 'Atualização do App',
+    body: 'Uma nova versão do Papaléguas Entregador está disponível. Atualize para ver as novidades.',
+    date: '20 Out, 10:00',
+    read: true
+  }
 ];

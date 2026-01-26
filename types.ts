@@ -52,3 +52,19 @@ export interface Transaction {
     timeline: TimelineEvent[];
   };
 }
+
+export enum NotificationType {
+  FINANCIAL = 'FINANCIAL',
+  URGENT = 'URGENT',
+  PROMOTION = 'PROMOTION',
+  SYSTEM = 'SYSTEM'
+}
+
+export interface NotificationModel {
+  id: string;
+  title: string;
+  body: string;
+  date: string;
+  type: NotificationType;
+  read: boolean;
+}
