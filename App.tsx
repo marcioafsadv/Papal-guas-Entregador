@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { DriverStatus, DeliveryMission, Transaction, NotificationModel, NotificationType } from './types';
-import { COLORS, calculateEarnings, MOCK_STORES, MOCK_CUSTOMERS, weeklyPayouts, pastOrders, MOCK_NOTIFICATIONS } from './constants';
+import { COLORS, calculateEarnings, MOCK_STORES, MOCK_CUSTOMERS, MOCK_NOTIFICATIONS } from './constants';
 import { MapMock } from './components/MapMock';
 import { ActionSlider } from './components/ActionSlider';
 import { Logo } from './components/Logo';
@@ -37,35 +37,6 @@ const SOUND_OPTIONS = [
 
 const ANTICIPATION_FEE = 5.00;
 
-// Dados do Usuário e Banco (Simulado - Base)
-const DEFAULT_USER_PROFILE = {
-  name: "João Motoca",
-  level: "Papa-Léguas Pro",
-  avatar: "https://i.pravatar.cc/150?u=joao",
-  bank: {
-    name: "Nubank",
-    code: "260",
-    agency: "0001",
-    account: "9876543-2",
-    type: "Conta Corrente",
-    pixKey: "joao.motoca@email.com"
-  }
-};
-
-const DEFAULT_USER_EXTENDED = {
-  cpf: "332.145.789-00",
-  phone: "(11) 98765-4321",
-  email: "joao.motoca@papaleguas.com",
-  region: "Itu - SP",
-  gender: "Masculino",
-  education: "Ensino Médio Completo",
-  cnh: {
-    number: "12345678900",
-    category: "AB",
-    expiry: "15/10/2028"
-  }
-};
-
 // Mock de Semanas para Filtro
 const MOCK_WEEKS = [
   { id: 'current', label: 'Semana Atual', range: '20 Out - 26 Out' },
@@ -82,61 +53,19 @@ const generateTimeline = (endTime: string) => {
   const format = (d: Date) => d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
 
   const events = [];
-  // Fim da rota (Horário atual)
   events.unshift({ time: format(date), description: 'Fim da rota', status: 'done' });
-  
-  // Pedido entregue (mesmo horário ou 1 min antes)
   events.unshift({ time: format(date), description: 'Pedido entregue', status: 'done' });
-  
-  // Em direção ao cliente (-5 min)
   date.setMinutes(date.getMinutes() - 5);
   events.unshift({ time: format(date), description: 'Em direção ao cliente', status: 'done' });
-  
-  // Saiu da coleta (mesmo horário)
   events.unshift({ time: format(date), description: 'Saiu da coleta', status: 'done' });
-  
-  // Chegou na coleta (-3 min)
   date.setMinutes(date.getMinutes() - 3);
   events.unshift({ time: format(date), description: 'Chegou na coleta', status: 'done' });
-  
-  // Indo pra coleta (-5 min)
   date.setMinutes(date.getMinutes() - 5);
   events.unshift({ time: format(date), description: 'Indo pra coleta', status: 'done' });
-  
-  // Rota aceita (mesmo horário)
   events.unshift({ time: format(date), description: 'Rota aceita', status: 'done' });
 
   return events as any[];
 };
-
-// Histórico Mockado Estendido
-const EXTENDED_HISTORY: Transaction[] = [
-  { 
-    id: '1', type: 'Entrega #PL-9801', amount: 12.40, time: '14:20', date: 'Hoje', weekId: 'current', status: 'COMPLETED',
-    details: { duration: '18 min', stops: 2, timeline: generateTimeline('14:20') }
-  },
-  { 
-    id: '2', type: 'Entrega #PL-9788', amount: 18.20, time: '13:15', date: 'Hoje', weekId: 'current', status: 'COMPLETED',
-    details: { duration: '25 min', stops: 2, timeline: generateTimeline('13:15') }
-  },
-  { 
-    id: '3', type: 'Entrega #PL-9750', amount: 9.90, time: '12:05', date: 'Hoje', weekId: 'current', status: 'COMPLETED',
-    details: { duration: '12 min', stops: 2, timeline: generateTimeline('12:05') }
-  },
-  { 
-    id: '4', type: 'Bônus de Incentivo', amount: 5.00, time: '11:00', date: 'Hoje', weekId: 'current', status: 'COMPLETED',
-    details: { duration: '-', stops: 0, timeline: [{ time: '11:00', description: 'Meta atingida', status: 'done' }] }
-  },
-  { 
-    id: '5', type: 'Entrega #PL-8821', amount: 15.50, time: '19:30', date: 'Ontem', weekId: 'current', status: 'COMPLETED',
-    details: { duration: '22 min', stops: 2, timeline: generateTimeline('19:30') }
-  },
-  // Semana passada
-  { 
-    id: '6', type: 'Entrega #PL-7740', amount: 22.00, time: '20:15', date: '18 Out', weekId: 'last', status: 'COMPLETED',
-    details: { duration: '35 min', stops: 3, timeline: generateTimeline('20:15') }
-  }
-];
 
 const App: React.FC = () => {
   // Authentication State
@@ -144,18 +73,45 @@ const App: React.FC = () => {
   const [authScreen, setAuthScreen] = useState<AuthScreen>('LOGIN');
   const [isLoadingAuth, setIsLoadingAuth] = useState(false);
   
+  // Estado Dinâmico do Usuário (Inicia Vazio/Novo)
+  const [currentUser, setCurrentUser] = useState({
+    name: '',
+    email: '',
+    phone: '',
+    cpf: '',
+    level: 'Guepardo PRO', // Nível fixo solicitado
+    avatar: 'https://i.pravatar.cc/150?u=default',
+    region: 'Itu - SP',
+    vehicle: 'moto',
+    verified: false,
+    bank: {
+      name: "Banco Digital", // Default placeholder
+      agency: "0001",
+      account: "00000-0",
+      type: "Conta Corrente",
+      pixKey: ""
+    },
+    cnh: {
+      number: "",
+      category: "A",
+      expiry: ""
+    }
+  });
+
   // Simulação de Banco de Dados de Usuários
+  // O usuário mockado inicial também segue a lógica de "novo usuário" para teste
   const [registeredUsers, setRegisteredUsers] = useState<any[]>([
     {
-       cpf: '123.456.789-00', // CPF Mockado para teste simples
+       cpf: '123.456.789-00', 
        password: '123',
-       name: DEFAULT_USER_PROFILE.name,
-       email: DEFAULT_USER_EXTENDED.email,
-       verified: true 
+       name: 'João Motoca',
+       email: 'joao@papaleguas.com',
+       phone: '(11) 99999-9999',
+       verified: true,
+       level: 'Guepardo PRO'
     }
   ]);
   
-  // Estado para registro pendente
   const [pendingUser, setPendingUser] = useState<any>(null);
 
   // Estados Globais
@@ -193,14 +149,11 @@ const App: React.FC = () => {
   // Simulação de Pedido Pronto
   const [isOrderReady, setIsOrderReady] = useState(false);
   
-  // Mission detail state
   const [showMissionMapPicker, setShowMissionMapPicker] = useState(false);
-
-  // Validação de Código (Coleta e Entrega)
   const [typedCode, setTypedCode] = useState('');
   const codeInputRefs = [useRef<HTMLInputElement>(null), useRef<HTMLInputElement>(null), useRef<HTMLInputElement>(null), useRef<HTMLInputElement>(null)];
 
-  // OTP Verification State (6 digits)
+  // OTP Verification
   const [otp, setOtp] = useState(['', '', '', '', '', '']);
   const otpInputRefs = [
     useRef<HTMLInputElement>(null), useRef<HTMLInputElement>(null), useRef<HTMLInputElement>(null),
@@ -208,23 +161,23 @@ const App: React.FC = () => {
   ];
   const [otpTimer, setOtpTimer] = useState(0);
 
-  // Anticipation state
+  // Anticipation
   const [isAnticipating, setIsAnticipating] = useState(false);
   const [showSuccessAnticipation, setShowSuccessAnticipation] = useState(false);
 
-  // Filtros e Preferências (NOVOS ESTADOS)
+  // Filtros
   const [showFiltersModal, setShowFiltersModal] = useState(false);
-  const [maxDistance, setMaxDistance] = useState(15); // Raio padrão 15km
+  const [maxDistance, setMaxDistance] = useState(15);
   const [minPrice, setMinPrice] = useState(0);
   const [backHome, setBackHome] = useState(false);
   const [homeDestination, setHomeDestination] = useState('Centro - Itu');
   const [autoAccept, setAutoAccept] = useState(false);
 
-  // Settings States
+  // Settings
   const [emergencyContact, setEmergencyContact] = useState({ name: '', phone: '', relation: '', isBeneficiary: false });
   const [selectedVehicle, setSelectedVehicle] = useState<'moto' | 'car' | 'bike'>('moto');
 
-  // GPS States
+  // GPS
   const [gpsEnabled, setGpsEnabled] = useState(false);
   const [isGpsLoading, setIsGpsLoading] = useState(false);
 
@@ -234,9 +187,8 @@ const App: React.FC = () => {
     return (saved as 'dark' | 'light') || 'dark';
   });
 
-  // Configurações de Interface
   const [soundEnabled, setSoundEnabled] = useState(true);
-  const [selectedSoundId, setSelectedSoundId] = useState('cheetah'); // Default agora é Guepardo
+  const [selectedSoundId, setSelectedSoundId] = useState('cheetah');
   
   // Notificações
   const [notifications, setNotifications] = useState<NotificationModel[]>(MOCK_NOTIFICATIONS);
@@ -244,21 +196,21 @@ const App: React.FC = () => {
   
   const alertAudioRef = useRef<HTMLAudioElement | null>(null);
 
-  // Estatísticas e Financeiro
-  const [balance, setBalance] = useState(142.50);
-  const [dailyEarnings, setDailyEarnings] = useState(0);
+  // Estatísticas e Financeiro - INICIANDO ZERADOS PARA NOVO USUÁRIO
+  const [balance, setBalance] = useState(0.00);
+  const [dailyEarnings, setDailyEarnings] = useState(0.00);
   const [dailyStats, setDailyStats] = useState({ accepted: 0, finished: 0, rejected: 0 });
-  const [history, setHistory] = useState<Transaction[]>(EXTENDED_HISTORY);
+  const [history, setHistory] = useState<Transaction[]>([]); // Histórico Vazio
+  const [payoutsList, setPayoutsList] = useState<any[]>([]); // Lista de Repasses Vazia
 
-  // Auth Inputs State
-  const [loginCpf, setLoginCpf] = useState('');
+  // Auth Inputs
+  const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [registerData, setRegisterData] = useState({ name: '', cpf: '', email: '', phone: '', password: '', confirmPassword: '' });
   
   const [recoveryMethod, setRecoveryMethod] = useState<'cpf' | 'email'>('cpf');
   const [recoveryInput, setRecoveryInput] = useState('');
 
-  // Limpa o código digitado sempre que o status muda
   useEffect(() => {
     setTypedCode('');
   }, [status]);
@@ -268,7 +220,6 @@ const App: React.FC = () => {
     document.body.className = theme === 'dark' ? 'bg-[#121212] text-white' : 'bg-zinc-50 text-zinc-900';
   }, [theme]);
   
-  // Timer OTP
   useEffect(() => {
     let timer: any;
     if (otpTimer > 0) {
@@ -277,18 +228,14 @@ const App: React.FC = () => {
     return () => clearInterval(timer);
   }, [otpTimer]);
 
-  // Check GPS on mount
   useEffect(() => {
     navigator.permissions.query({ name: 'geolocation' }).then((result) => {
       if (result.state === 'granted') {
         setGpsEnabled(true);
       }
-    }).catch(() => {
-      // Browser might not support permission query, fallback to normal flow
-    });
+    }).catch(() => {});
   }, []);
 
-  // Cleanup video stream on unmount
   useEffect(() => {
     return () => {
       if (videoStream) {
@@ -302,25 +249,23 @@ const App: React.FC = () => {
   const handleActivateGPS = () => {
     setIsGpsLoading(true);
     if (!navigator.geolocation) {
-      alert("Geolocalização não é suportada pelo seu navegador.");
+      alert("Geolocalização não é suportada.");
       setIsGpsLoading(false);
       return;
     }
 
     navigator.geolocation.getCurrentPosition(
-      (position) => {
+      () => {
         setGpsEnabled(true);
         setIsGpsLoading(false);
-        // Force map re-center
         setMapCenterKey(prev => prev + 1);
       },
       (error) => {
         console.error("Erro GPS:", error);
         setIsGpsLoading(false);
         setGpsEnabled(false);
-        // User denied or error occurred
         if (error.code === error.PERMISSION_DENIED) {
-           alert("Você precisa permitir o acesso à localização nas configurações do seu navegador/celular para trabalhar.");
+           alert("Você precisa permitir o acesso à localização.");
         }
       },
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
@@ -332,9 +277,7 @@ const App: React.FC = () => {
       setStatus(DriverStatus.OFFLINE);
       setMission(null);
     } else {
-      // Trying to go ONLINE
       if (!gpsEnabled) {
-        // Trigger GPS request automatically
         handleActivateGPS();
       } else {
         setStatus(DriverStatus.ONLINE);
@@ -356,37 +299,18 @@ const App: React.FC = () => {
 
   const handleSOSAction = (type: 'police' | 'samu' | 'mechanic' | 'share') => {
     if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
-    
     switch(type) {
-      case 'police':
-        window.location.href = 'tel:190';
-        break;
-      case 'samu':
-        window.location.href = 'tel:192';
-        break;
-      case 'mechanic':
-        // Abre Google Maps buscando mecânicos próximos
-        window.open('https://www.google.com/maps/search/borracharia+mecanico+moto', '_blank');
-        break;
+      case 'police': window.location.href = 'tel:190'; break;
+      case 'samu': window.location.href = 'tel:192'; break;
+      case 'mechanic': window.open('https://www.google.com/maps/search/borracharia+mecanico+moto', '_blank'); break;
       case 'share':
-        if (!navigator.geolocation) {
-           alert("GPS indisponível para compartilhar localização.");
-           return;
-        }
-        
+        if (!navigator.geolocation) { alert("GPS indisponível."); return; }
         navigator.geolocation.getCurrentPosition((pos) => {
            const { latitude, longitude } = pos.coords;
-           const mapLink = `https://maps.google.com/?q=${latitude},${longitude}`;
-           const message = `SOS! Preciso de ajuda. Estou aqui: ${mapLink}`;
-           
-           // Abre WhatsApp com a mensagem preenchida
-           const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(message)}`;
-           window.open(whatsappUrl, '_blank');
-           
+           const message = `SOS! Preciso de ajuda. Estou aqui: https://maps.google.com/?q=${latitude},${longitude}`;
+           window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, '_blank');
            setShowSOSModal(false);
-        }, (err) => {
-           alert("Erro ao obter localização: " + err.message);
-        }, { enableHighAccuracy: true });
+        }, () => alert("Erro ao obter localização."), { enableHighAccuracy: true });
         break;
     }
   };
@@ -407,21 +331,13 @@ const App: React.FC = () => {
   useEffect(() => {
     const soundUrl = SOUND_OPTIONS.find(s => s.id === selectedSoundId)?.url || SOUND_OPTIONS[0].url;
     const audio = new Audio(soundUrl);
-    // audio.crossOrigin = "anonymous"; // Removed potential cross-origin blocker for generic audio
     audio.loop = true; 
     alertAudioRef.current = audio;
   }, [selectedSoundId]);
 
   useEffect(() => {
     if (status === DriverStatus.ALERTING && soundEnabled && alertAudioRef.current) {
-      // Ensure promise is handled
-      const playPromise = alertAudioRef.current.play();
-      if (playPromise !== undefined) {
-        playPromise.catch(e => {
-            console.error("Erro áudio:", e);
-        });
-      }
-      
+      alertAudioRef.current.play().catch(e => console.error(e));
       if (autoAccept) {
         setTimeout(() => setStatus(DriverStatus.GOING_TO_STORE), 1500);
       }
@@ -431,7 +347,6 @@ const App: React.FC = () => {
     }
   }, [status, soundEnabled, autoAccept]);
 
-  // Timer para simular pedido ficando pronto
   useEffect(() => {
     let timer: any;
     if (status === DriverStatus.ARRIVED_AT_STORE) {
@@ -439,7 +354,7 @@ const App: React.FC = () => {
       timer = setTimeout(() => {
         setIsOrderReady(true);
         if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
-      }, 10000); // 10 segundos
+      }, 10000); 
     } else {
       setIsOrderReady(false);
     }
@@ -453,7 +368,6 @@ const App: React.FC = () => {
     }
   }, [status]);
 
-  // Gerador de Missões
   useEffect(() => {
     let timer: any;
     if (status === DriverStatus.ONLINE && !mission) {
@@ -464,7 +378,6 @@ const App: React.FC = () => {
         const distToStore = parseFloat((Math.random() * 2 + 0.2).toFixed(1));
         const maxDeliveryDist = Math.max(1, maxDistance - distToStore);
         const delivDist = parseFloat((Math.random() * Math.min(8, maxDeliveryDist) + 1).toFixed(1));
-        
         const totalDist = parseFloat((distToStore + delivDist).toFixed(1));
         const price = calculateEarnings(delivDist);
 
@@ -485,7 +398,6 @@ const App: React.FC = () => {
           earnings: price,
           timeLimit: 25
         };
-        
         setMission(dynamicMission);
         setStatus(DriverStatus.ALERTING);
         setAlertCountdown(30);
@@ -506,7 +418,6 @@ const App: React.FC = () => {
     return () => clearInterval(interval);
   }, [status, alertCountdown]);
 
-  // Função core para processar o ganho e finalizar
   const processDeliverySuccess = (currentMission: DeliveryMission) => {
     const earned = currentMission.earnings;
     setBalance(prev => prev + earned);
@@ -536,19 +447,14 @@ const App: React.FC = () => {
 
   const handleFinishDelivery = () => {
     if (!mission) return;
-
-    // Lógica de Segurança: Verificar identidade se for a primeira entrega da sessão
     if (!hasVerifiedSession) {
       setVerificationStep('START');
       setCurrentScreen('FACIAL_VERIFICATION');
       return;
     }
-
-    // Se já verificado, prossegue normal
     processDeliverySuccess(mission);
   };
 
-  // Facial Verification Handlers
   const startCamera = async () => {
     setVerificationStep('CAMERA');
     try {
@@ -558,22 +464,14 @@ const App: React.FC = () => {
         videoRef.current.srcObject = stream;
         videoRef.current.play();
       }
-      
-      // Simulate Liveness Detection Flow
       setTimeout(() => {
-        // Change instruction to "SMILE"
         const instruction = document.getElementById('camera-instruction');
         if (instruction) instruction.innerText = "Agora, dê um sorriso!";
-        
-        // Capture after a delay
-        setTimeout(() => {
-           captureAndVerify();
-        }, 2000);
+        setTimeout(() => captureAndVerify(), 2000);
       }, 2500);
-
     } catch (err) {
       console.error("Camera Error: ", err);
-      alert("Erro ao acessar a câmera. Verifique as permissões.");
+      alert("Erro ao acessar a câmera.");
       setVerificationStep('START');
     }
   };
@@ -583,22 +481,15 @@ const App: React.FC = () => {
       const context = canvasRef.current.getContext('2d');
       if (context) {
         context.drawImage(videoRef.current, 0, 0, canvasRef.current.width, canvasRef.current.height);
-        
-        // Stop stream
         if (videoStream) {
           videoStream.getTracks().forEach(track => track.stop());
           setVideoStream(null);
         }
-        
         setVerificationStep('PROCESSING');
-        
-        // Simulate Backend Processing
         setTimeout(() => {
           setVerificationStep('SUCCESS');
           setHasVerifiedSession(true);
-          
           setTimeout(() => {
-             // Return to map and finish delivery logic
              setCurrentScreen('HOME');
              if (mission) processDeliverySuccess(mission);
           }, 1500);
@@ -641,7 +532,7 @@ const App: React.FC = () => {
   const handleCodeChange = (index: number, value: string) => {
     if (value.length > 1) return;
     const newCode = typedCode.split('');
-    while(newCode.length <= index) newCode.push(''); // Ensure array is long enough
+    while(newCode.length <= index) newCode.push('');
     newCode[index] = value;
     const combined = newCode.join('');
     setTypedCode(combined);
@@ -672,24 +563,19 @@ const App: React.FC = () => {
     }
   };
 
-  // Função centralizada para validar código dependendo do estágio
   const isCodeValid = () => {
     if (!mission) return false;
-    // Na coleta (PICKING_UP), a conferência é visual, então não bloqueamos o botão
     if (status === DriverStatus.PICKING_UP) return true;
     if (status === DriverStatus.ARRIVED_AT_CUSTOMER) return typedCode === mission.customerPhoneSuffix;
-    return true; // Outros estágios não exigem código para avançar
+    return true;
   };
 
   const applyCpfMask = (value: string) => {
-    let v = value.replace(/\D/g, ""); // Remove não numéricos
-    if (v.length > 11) v = v.slice(0, 11); // Limita a 11 dígitos
-
-    // Aplica formatação XXX.XXX.XXX-XX
+    let v = value.replace(/\D/g, "");
+    if (v.length > 11) v = v.slice(0, 11);
     v = v.replace(/(\d{3})(\d)/, "$1.$2");
     v = v.replace(/(\d{3})(\d)/, "$1.$2");
     v = v.replace(/(\d{3})(\d{1,2})$/, "$1-$2");
-    
     return v;
   };
 
@@ -697,7 +583,6 @@ const App: React.FC = () => {
   const textPrimary = theme === 'dark' ? 'text-white' : 'text-zinc-900';
   const textMuted = theme === 'dark' ? 'text-zinc-500' : 'text-zinc-400';
   const innerBg = theme === 'dark' ? 'bg-zinc-800' : 'bg-zinc-100';
-  
   const isFilterActive = backHome || maxDistance < 30 || minPrice > 0;
 
   const handleMainAction = () => {
@@ -710,32 +595,32 @@ const App: React.FC = () => {
 
   // ---------------- AUTH HANDLERS ----------------
   const handleLogin = () => {
-    if (!loginCpf || !loginPassword) {
-      alert("Preencha CPF e Senha.");
+    if (!loginEmail || !loginPassword) {
+      alert("Preencha E-mail e Senha.");
       return;
     }
-    
     setIsLoadingAuth(true);
-    
     setTimeout(() => {
       setIsLoadingAuth(false);
-      
-      const user = registeredUsers.find(u => u.cpf === loginCpf && u.password === loginPassword);
-      
+      const user = registeredUsers.find(u => u.email === loginEmail && u.password === loginPassword);
       if (!user) {
         alert("Credenciais inválidas.");
         return;
       }
-      
       if (!user.verified) {
-        alert("Por favor, verifique seu e-mail para ativar a conta antes de entrar.");
-        // Opcional: Poderia oferecer para reenviar o código aqui e ir para a tela de verificação
+        alert("Por favor, verifique seu e-mail.");
         return;
       }
-      
-      // Login Sucesso
+      // Set User Context Dynamic
+      setCurrentUser(prev => ({
+        ...prev,
+        name: user.name,
+        email: user.email,
+        phone: user.phone || prev.phone,
+        cpf: user.cpf || prev.cpf,
+        verified: true
+      }));
       setIsAuthenticated(true);
-      // Reset verification for new session
       setHasVerifiedSession(false);
     }, 1500);
   };
@@ -746,19 +631,12 @@ const App: React.FC = () => {
       alert("Preencha todos os campos obrigatórios.");
       return;
     }
-    
     setIsLoadingAuth(true);
     setTimeout(() => {
       setIsLoadingAuth(false);
-      
-      // Cria registro pendente
       setPendingUser({ ...registerData });
-      
-      // Simula envio de código
-      console.log("Código enviado para: " + registerData.email);
       setOtp(['', '', '', '', '', '']);
-      setOtpTimer(60); // 60 segundos para reenviar
-      
+      setOtpTimer(60);
       setAuthScreen('VERIFICATION');
     }, 1500);
   };
@@ -766,24 +644,17 @@ const App: React.FC = () => {
   const handleVerifyCode = () => {
     const code = otp.join('');
     if (code.length < 6) return;
-    
     setIsLoadingAuth(true);
-    
-    // Simulação de validação de API
     setTimeout(() => {
       setIsLoadingAuth(false);
-      
-      // Código mockado '123456'
       if (code === '123456') {
-         // Cria usuário verificado
          const newUser = {
            ...pendingUser,
-           verified: true
+           verified: true,
+           level: 'Guepardo PRO' // Nível fixo para novos usuários
          };
-         
          setRegisteredUsers(prev => [...prev, newUser]);
          setPendingUser(null);
-         
          alert("Conta verificada com sucesso! Faça login.");
          setAuthScreen('LOGIN');
       } else {
@@ -796,10 +667,8 @@ const App: React.FC = () => {
   
   const handleResendCode = () => {
      if (otpTimer > 0) return;
-     
      setOtpTimer(60);
      alert(`Novo código enviado para ${pendingUser?.email}`);
-     // Reset fields? Not necessary, maybe user just missed it.
   };
 
   const handleRecovery = (e: React.FormEvent) => {
@@ -812,7 +681,6 @@ const App: React.FC = () => {
     }, 1500);
   };
   
-  // Notification Logic
   const unreadCount = notifications.filter(n => !n.read).length;
   
   const handleOpenNotifications = () => {
@@ -846,7 +714,6 @@ const App: React.FC = () => {
         </div>
 
         <div className="relative z-10 w-full max-w-sm flex flex-col items-center">
-          {/* Logo corrected - No scale transform to avoid distortion */}
           <div className="mb-8 w-full flex justify-center">
             <Logo size="lg" />
           </div>
@@ -859,15 +726,14 @@ const App: React.FC = () => {
                  
                  <div className="space-y-4">
                     <div>
-                       <label className={`text-[10px] font-black uppercase tracking-widest ml-2 mb-1 block ${textMuted}`}>CPF</label>
+                       <label className={`text-[10px] font-black uppercase tracking-widest ml-2 mb-1 block ${textMuted}`}>E-mail</label>
                        <div className={`flex items-center px-4 h-14 rounded-2xl border transition-colors ${innerBg} border-white/5 focus-within:border-[#FF6B00]`}>
-                          <i className={`fas fa-id-card mr-3 ${textMuted}`}></i>
+                          <i className={`fas fa-envelope mr-3 ${textMuted}`}></i>
                           <input 
-                            type="text" 
-                            placeholder="000.000.000-00"
-                            value={loginCpf}
-                            onChange={(e) => setLoginCpf(applyCpfMask(e.target.value))}
-                            maxLength={14}
+                            type="email" 
+                            placeholder="seu@email.com"
+                            value={loginEmail}
+                            onChange={(e) => setLoginEmail(e.target.value)}
                             className={`w-full bg-transparent outline-none font-bold ${textPrimary} placeholder:text-zinc-600`}
                           />
                        </div>
@@ -1038,7 +904,6 @@ const App: React.FC = () => {
               />
               
               <div className="absolute right-4 bottom-24 flex flex-col space-y-3 z-[1001]">
-                {/* Botão de Filtros */}
                 <button 
                   onClick={() => setShowFiltersModal(true)} 
                   className={`w-12 h-12 rounded-2xl shadow-2xl flex items-center justify-center text-[#FF6B00] border active:scale-90 transition-transform relative ${cardBg}`}
@@ -1047,7 +912,6 @@ const App: React.FC = () => {
                   {isFilterActive && <div className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full border-2 border-white dark:border-black"></div>}
                 </button>
 
-                {/* Botão de Camadas (Layers) - Atualizado */}
                 <button 
                   onClick={() => setShowLayersModal(true)} 
                   className={`w-12 h-12 rounded-2xl shadow-2xl flex items-center justify-center border active:scale-90 transition-transform ${cardBg} ${showHeatMap || showTraffic || mapMode === 'satellite' ? 'text-[#FF6B00] border-[#FF6B00]/30' : textMuted}`}
@@ -1210,7 +1074,6 @@ const App: React.FC = () => {
                         </div>
                       )}
                       
-                      {/* NOVO: Interface de PICKING_UP (Coleta Confirmada Visualmente) */}
                       {status === DriverStatus.PICKING_UP && (
                         <div className="relative overflow-hidden rounded-[28px] border-2 border-dashed border-[#FF6B00]/40 bg-[#FF6B00]/5 p-6 flex flex-col items-center text-center animate-in zoom-in duration-300">
                            <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-[#FF6B00] to-transparent opacity-50"></div>
@@ -1232,7 +1095,6 @@ const App: React.FC = () => {
                         </div>
                       )}
 
-                      {/* Campo de Código Inteligente: APENAS na Entrega agora */}
                       {status === DriverStatus.ARRIVED_AT_CUSTOMER && (
                         <div className={`p-4 rounded-[24px] border mb-4 transition-all ${isCodeValid() ? 'bg-green-500/10 border-green-500/40' : 'bg-white/5 border-white/5'}`}>
                           <p className={`text-[9px] font-black uppercase text-center mb-3 tracking-widest ${isCodeValid() ? 'text-green-500' : textMuted}`}>
@@ -1276,7 +1138,6 @@ const App: React.FC = () => {
                </div>
             )}
             
-            {/* Modal de Camadas do Mapa */}
             {showLayersModal && (
                <div className="absolute inset-0 bg-black/80 z-[6000] flex items-end sm:items-center justify-center p-0 sm:p-6 backdrop-blur-sm animate-in fade-in duration-300">
                   <div className={`w-full max-w-sm rounded-t-[40px] sm:rounded-[40px] p-8 border-t border-white/10 shadow-2xl animate-in slide-in-from-bottom duration-300 pb-12 ${cardBg}`}>
@@ -1288,7 +1149,6 @@ const App: React.FC = () => {
                      </div>
 
                      <div className="space-y-4">
-                        {/* Heatmap Toggle */}
                         <div className={`p-5 rounded-[28px] border border-white/5 flex items-center justify-between cursor-pointer transition-colors ${showHeatMap ? 'bg-[#FF6B00]/10 border-[#FF6B00]/30' : innerBg}`} onClick={() => setShowHeatMap(!showHeatMap)}>
                            <div className="flex items-center space-x-4">
                               <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${showHeatMap ? 'bg-[#FF6B00] text-white' : 'bg-zinc-700/50 text-zinc-500'}`}>
@@ -1304,7 +1164,6 @@ const App: React.FC = () => {
                            </div>
                         </div>
 
-                        {/* Traffic Toggle */}
                         <div className={`p-5 rounded-[28px] border border-white/5 flex items-center justify-between cursor-pointer transition-colors ${showTraffic ? 'bg-red-500/10 border-red-500/30' : innerBg}`} onClick={() => setShowTraffic(!showTraffic)}>
                            <div className="flex items-center space-x-4">
                               <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${showTraffic ? 'bg-red-500 text-white' : 'bg-zinc-700/50 text-zinc-500'}`}>
@@ -1320,7 +1179,6 @@ const App: React.FC = () => {
                            </div>
                         </div>
 
-                        {/* Satellite Toggle */}
                         <div className={`p-5 rounded-[28px] border border-white/5 flex items-center justify-between cursor-pointer transition-colors ${mapMode === 'satellite' ? 'bg-[#33CCFF]/10 border-[#33CCFF]/30' : innerBg}`} onClick={() => setMapMode(prev => prev === 'standard' ? 'satellite' : 'standard')}>
                            <div className="flex items-center space-x-4">
                               <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${mapMode === 'satellite' ? 'bg-[#33CCFF] text-white' : 'bg-zinc-700/50 text-zinc-500'}`}>
@@ -1345,14 +1203,12 @@ const App: React.FC = () => {
         return (
           <div className={`h-full w-full relative overflow-hidden flex flex-col items-center justify-center p-6 ${theme === 'dark' ? 'bg-black' : 'bg-zinc-900'}`}>
              
-             {/* Header */}
              <div className="absolute top-6 left-0 right-0 text-center z-20">
                 <i className="fas fa-shield-halved text-[#FF6B00] text-3xl mb-2"></i>
                 <h1 className="text-xl font-black text-white italic uppercase tracking-wider">Verificação de Identidade</h1>
                 <p className="text-zinc-400 text-xs font-bold mt-1">Check de Segurança Obrigatório</p>
              </div>
 
-             {/* Main Content Area */}
              <div className="relative w-full max-w-sm flex flex-col items-center z-10">
                 
                 {verificationStep === 'START' && (
@@ -1375,16 +1231,14 @@ const App: React.FC = () => {
 
                 {verificationStep === 'CAMERA' && (
                    <div className="flex flex-col items-center w-full animate-in fade-in duration-300">
-                      {/* Circular Camera Mask */}
                       <div className="relative w-72 h-72 rounded-full overflow-hidden border-4 border-[#FF6B00] shadow-[0_0_50px_rgba(255,107,0,0.3)] mb-8 bg-black">
                          <video 
                            ref={videoRef}
                            autoPlay 
                            playsInline 
                            muted 
-                           className="w-full h-full object-cover transform scale-x-[-1]" // Mirror effect
+                           className="w-full h-full object-cover transform scale-x-[-1]" 
                          />
-                         {/* Scanning Overlay Effect */}
                          <div className="absolute inset-0 bg-gradient-to-b from-transparent via-[#FF6B00]/20 to-transparent animate-[pulse_2s_infinite] pointer-events-none"></div>
                          <canvas ref={canvasRef} className="hidden w-full h-full"></canvas>
                       </div>
@@ -1426,7 +1280,6 @@ const App: React.FC = () => {
 
              </div>
 
-             {/* Background Effects */}
              <div className="absolute inset-0 pointer-events-none opacity-20">
                 <div className="absolute top-0 left-0 w-full h-1/2 bg-gradient-to-b from-[#FF6B00]/20 to-transparent"></div>
                 <div className="absolute bottom-0 left-0 w-full h-1/2 bg-gradient-to-t from-black to-transparent"></div>
@@ -1434,12 +1287,7 @@ const App: React.FC = () => {
           </div>
         );
       case 'WALLET':
-        // ... (rest of Wallet switch case code remains unchanged, implied by context structure)
         const filteredHistory = history.filter(item => item.weekId === activeWeekId);
-        // ... (Truncated for brevity as requested only changes are needed, but sticking to file replacement format)
-        // Since I have to replace the WHOLE file content, I must paste the rest of the file content here.
-        // Re-pasting the existing WALLET, WITHDRAWAL_REQUEST, ORDERS, NOTIFICATIONS, SETTINGS cases below.
-        
         const weeklyEarningsTotal = filteredHistory.reduce((acc, item) => acc + (item.amount > 0 ? item.amount : 0), 0) + (activeWeekId === 'current' ? dailyEarnings : 0);
         const activeWeekLabel = MOCK_WEEKS.find(w => w.id === activeWeekId)?.range || 'Semana Atual';
 
@@ -1465,7 +1313,7 @@ const App: React.FC = () => {
               <p className={`${textMuted} font-bold uppercase text-[10px] tracking-widest mb-2 relative z-10`}>Saldo Disponível</p>
               <h2 className={`text-4xl font-black ${textPrimary} mb-6 relative z-10`}>R$ {balance.toFixed(2)}</h2>
               
-              <button onClick={() => setCurrentScreen('WITHDRAWAL_REQUEST')} className="w-full h-14 bg-[#FF6B00] rounded-2xl text-white font-black text-xs uppercase italic tracking-widest shadow-lg shadow-orange-900/30 flex items-center justify-center space-x-2 active:scale-95 transition-transform relative z-10">
+              <button disabled={balance <= 0} onClick={() => setCurrentScreen('WITHDRAWAL_REQUEST')} className={`w-full h-14 rounded-2xl text-white font-black text-xs uppercase italic tracking-widest shadow-lg flex items-center justify-center space-x-2 transition-all relative z-10 ${balance <= 0 ? 'bg-zinc-700 opacity-50' : 'bg-[#FF6B00] shadow-orange-900/30 active:scale-95'}`}>
                   <i className="fas fa-hand-holding-dollar text-lg"></i>
                   <span>Antecipar Repasse</span>
               </button>
@@ -1524,7 +1372,12 @@ const App: React.FC = () => {
                      </div>
 
                      {filteredHistory.length === 0 ? (
-                        <div className="py-8 text-center"><p className={`text-xs font-bold ${textMuted}`}>Nenhum lançamento nesta semana.</p></div>
+                        <div className={`py-12 text-center rounded-[32px] border border-dashed ${theme === 'dark' ? 'border-zinc-800' : 'border-zinc-300'}`}>
+                           <div className={`w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-3 ${innerBg} text-zinc-500`}>
+                              <i className="fas fa-receipt text-2xl"></i>
+                           </div>
+                           <p className={`text-xs font-bold ${textMuted}`}>Nenhum registro encontrado.</p>
+                        </div>
                      ) : (
                         filteredHistory.map((item, index) => (
                           <div 
@@ -1559,23 +1412,32 @@ const App: React.FC = () => {
                            <span className={`text-[9px] font-black ${textPrimary}`}>Filtrar Data</span>
                         </div>
                      </div>
-                     {weeklyPayouts.map((payout) => (
-                        <div key={payout.id} className={`p-4 rounded-[24px] border flex justify-between items-center ${cardBg}`}>
-                           <div className="flex items-center space-x-4">
-                              <div className={`w-10 h-10 rounded-xl flex items-center justify-center bg-[#FFD700]/10 text-[#FFD700]`}>
-                                 <i className="fas fa-file-invoice-dollar"></i>
-                              </div>
-                              <div>
-                                 <p className={`text-xs font-black ${textPrimary}`}>Repasse Semanal</p>
-                                 <p className={`text-[9px] font-bold ${textMuted}`}>{payout.period}</p>
-                              </div>
+                     {payoutsList.length === 0 ? (
+                        <div className={`py-12 text-center rounded-[32px] border border-dashed ${theme === 'dark' ? 'border-zinc-800' : 'border-zinc-300'}`}>
+                           <div className={`w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-3 ${innerBg} text-zinc-500`}>
+                              <i className="fas fa-file-invoice-dollar text-2xl"></i>
                            </div>
-                           <div className="text-right">
-                              <p className={`font-black text-sm ${textPrimary}`}>R$ {payout.amount.toFixed(2)}</p>
-                              <span className="text-[8px] font-bold text-green-500 uppercase bg-green-500/10 px-1.5 py-0.5 rounded ml-auto inline-block">{payout.status}</span>
-                           </div>
+                           <p className={`text-xs font-bold ${textMuted}`}>Nenhum repasse realizado ainda.</p>
                         </div>
-                     ))}
+                     ) : (
+                       payoutsList.map((payout) => (
+                          <div key={payout.id} className={`p-4 rounded-[24px] border flex justify-between items-center ${cardBg}`}>
+                             <div className="flex items-center space-x-4">
+                                <div className={`w-10 h-10 rounded-xl flex items-center justify-center bg-[#FFD700]/10 text-[#FFD700]`}>
+                                   <i className="fas fa-file-invoice-dollar"></i>
+                                </div>
+                                <div>
+                                   <p className={`text-xs font-black ${textPrimary}`}>Repasse Semanal</p>
+                                   <p className={`text-[9px] font-bold ${textMuted}`}>{payout.period}</p>
+                                </div>
+                             </div>
+                             <div className="text-right">
+                                <p className={`font-black text-sm ${textPrimary}`}>R$ {payout.amount.toFixed(2)}</p>
+                                <span className="text-[8px] font-bold text-green-500 uppercase bg-green-500/10 px-1.5 py-0.5 rounded ml-auto inline-block">{payout.status}</span>
+                             </div>
+                          </div>
+                       ))
+                     )}
                   </>
                 )}
               </div>
@@ -1598,8 +1460,8 @@ const App: React.FC = () => {
                    <i className="fas fa-bank text-xl"></i>
                 </div>
                 <div>
-                   <h3 className={`font-black text-lg ${textPrimary}`}>{DEFAULT_USER_PROFILE.bank.name}</h3>
-                   <p className={`${textMuted} font-bold text-[10px] uppercase`}>AG {DEFAULT_USER_PROFILE.bank.agency} • CC {DEFAULT_USER_PROFILE.bank.account}</p>
+                   <h3 className={`font-black text-lg ${textPrimary}`}>{currentUser.bank.name}</h3>
+                   <p className={`${textMuted} font-bold text-[10px] uppercase`}>AG {currentUser.bank.agency} • CC {currentUser.bank.account}</p>
                 </div>
                 <div className="ml-auto">
                    <i className="fas fa-check-circle text-green-500 text-xl"></i>
@@ -1654,7 +1516,6 @@ const App: React.FC = () => {
               </div>
             </div>
 
-            {/* Outros Assuntos */}
             <div>
               <h3 className={`${textMuted} font-black uppercase text-[10px] tracking-[0.2em] mb-4`}>Outros Assuntos</h3>
               <div className="space-y-3">
@@ -1722,8 +1583,6 @@ const App: React.FC = () => {
                                  <p className={`text-[9px] font-bold uppercase tracking-widest opacity-60 ${textPrimary}`}>{notification.date}</p>
                               </div>
                            </div>
-
-                           {/* Delete Button (Simulating Swipe Action area on right) */}
                            <div className="absolute top-4 right-4">
                               <button 
                                 onClick={(e) => { e.stopPropagation(); deleteNotification(notification.id); }}
@@ -1746,11 +1605,11 @@ const App: React.FC = () => {
                 <h1 className={`text-3xl font-black italic mb-8 ${textPrimary}`}>Ajustes</h1>
                 <div className={`flex items-center space-x-4 mb-10 p-6 rounded-[32px] border ${cardBg}`}>
                   <div className="w-16 h-16 rounded-3xl p-1 border-2 border-[#FF6B00]">
-                    <img src={DEFAULT_USER_PROFILE.avatar} className="w-full h-full object-cover rounded-2xl" alt="Perfil" />
+                    <img src={currentUser.avatar} className="w-full h-full object-cover rounded-2xl" alt="Perfil" />
                   </div>
                   <div>
-                    <h2 className={`text-xl font-black ${textPrimary}`}>{DEFAULT_USER_PROFILE.name}</h2>
-                    <p className={`${textMuted} text-xs font-bold uppercase tracking-widest`}>Nível: {DEFAULT_USER_PROFILE.level}</p>
+                    <h2 className={`text-xl font-black ${textPrimary}`}>{currentUser.name || 'Entregador'}</h2>
+                    <p className={`${textMuted} text-xs font-bold uppercase tracking-widest`}>Nível: {currentUser.level}</p>
                   </div>
                 </div>
 
@@ -1796,13 +1655,12 @@ const App: React.FC = () => {
                            <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${innerBg} text-[#FF6B00]`}><i className="fas fa-motorcycle"></i></div>
                            <div>
                               <p className={`text-sm font-bold ${textPrimary}`}>Veículo e Região</p>
-                              <p className={`text-[9px] font-bold uppercase ${textMuted} mt-0.5`}>{selectedVehicle} • {DEFAULT_USER_EXTENDED.region}</p>
+                              <p className={`text-[9px] font-bold uppercase ${textMuted} mt-0.5`}>{selectedVehicle} • {currentUser.region}</p>
                            </div>
                         </div>
                         <i className={`fas fa-chevron-right text-xs ${textMuted}`}></i>
                       </button>
 
-                      {/* NEW BUTTON FOR SOUNDS NAVIGATION */}
                       <button onClick={() => setSettingsView('SOUNDS')} className={`w-full p-4 rounded-[24px] border flex justify-between items-center active:scale-[0.98] transition-all ${theme === 'dark' ? cardBg : 'bg-zinc-200 border-zinc-300'}`}>
                         <div className="flex items-center space-x-4">
                            <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${innerBg} text-[#FF6B00]`}><i className="fas fa-volume-high"></i></div>
@@ -1836,7 +1694,6 @@ const App: React.FC = () => {
             </div>
           );
         } else {
-          // Sub-telas (Personal, Documents, etc.)
           return (
             <div className={`h-full w-full p-6 overflow-y-auto pb-24 transition-colors duration-300 ${theme === 'dark' ? 'bg-black' : 'bg-zinc-50'}`}>
               <div className="flex items-center space-x-4 mb-8">
@@ -1856,17 +1713,15 @@ const App: React.FC = () => {
               {settingsView === 'PERSONAL' && (
                 <div className="space-y-4 animate-in slide-in-from-right duration-300">
                   {[
-                    { label: 'Nome Completo', value: DEFAULT_USER_PROFILE.name },
-                    { label: 'CPF', value: DEFAULT_USER_EXTENDED.cpf },
-                    { label: 'Telefone', value: DEFAULT_USER_EXTENDED.phone },
-                    { label: 'E-mail', value: DEFAULT_USER_EXTENDED.email },
-                    { label: 'Região', value: DEFAULT_USER_EXTENDED.region },
-                    { label: 'Gênero', value: DEFAULT_USER_EXTENDED.gender },
-                    { label: 'Escolaridade', value: DEFAULT_USER_EXTENDED.education },
+                    { label: 'Nome Completo', value: currentUser.name },
+                    { label: 'CPF', value: currentUser.cpf },
+                    { label: 'Telefone', value: currentUser.phone },
+                    { label: 'E-mail', value: currentUser.email },
+                    { label: 'Região', value: currentUser.region },
                   ].map((item, i) => (
                     <div key={i} className={`p-4 rounded-[24px] border ${cardBg}`}>
                       <p className={`${textMuted} text-[9px] font-black uppercase tracking-widest mb-1`}>{item.label}</p>
-                      <p className={`text-sm font-bold ${textPrimary}`}>{item.value}</p>
+                      <p className={`text-sm font-bold ${textPrimary}`}>{item.value || '-'}</p>
                     </div>
                   ))}
                 </div>
@@ -1886,11 +1741,11 @@ const App: React.FC = () => {
                          </div>
                          <div>
                             <p className={`${textMuted} text-[9px] font-black uppercase tracking-widest mb-1`}>Categoria</p>
-                            <p className={`text-xl font-black ${textPrimary}`}>{DEFAULT_USER_EXTENDED.cnh.category}</p>
+                            <p className={`text-xl font-black ${textPrimary}`}>{currentUser.cnh.category}</p>
                          </div>
                          <div className="col-span-2">
-                            <p className={`${textMuted} text-[9px] font-black uppercase tracking-widest mb-1`}>Data de Validade</p>
-                            <p className={`text-xl font-black ${textPrimary}`}>{DEFAULT_USER_EXTENDED.cnh.expiry}</p>
+                            <p className={`${textMuted} text-[9px] font-black uppercase tracking-widest mb-1`}>Status</p>
+                            <p className={`text-xl font-black ${textPrimary}`}>Validado</p>
                          </div>
                       </div>
                    </div>
@@ -1904,27 +1759,27 @@ const App: React.FC = () => {
                       <div className="flex items-center space-x-4 mb-6">
                          <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${innerBg} text-[#FF6B00]`}><i className="fas fa-bank"></i></div>
                          <div>
-                            <p className={`text-lg font-black ${textPrimary}`}>{DEFAULT_USER_PROFILE.bank.name}</p>
-                            <p className={`text-[10px] font-bold ${textMuted}`}>{DEFAULT_USER_PROFILE.bank.type}</p>
+                            <p className={`text-lg font-black ${textPrimary}`}>{currentUser.bank.name}</p>
+                            <p className={`text-[10px] font-bold ${textMuted}`}>{currentUser.bank.type}</p>
                          </div>
                       </div>
                       <div className="grid grid-cols-2 gap-4">
                         <div>
                           <p className={`${textMuted} text-[9px] font-black uppercase tracking-widest`}>Agência</p>
-                          <p className={`text-sm font-bold ${textPrimary}`}>{DEFAULT_USER_PROFILE.bank.agency}</p>
+                          <p className={`text-sm font-bold ${textPrimary}`}>{currentUser.bank.agency}</p>
                         </div>
                         <div>
                           <p className={`${textMuted} text-[9px] font-black uppercase tracking-widest`}>Conta</p>
-                          <p className={`text-sm font-bold ${textPrimary}`}>{DEFAULT_USER_PROFILE.bank.account}</p>
+                          <p className={`text-sm font-bold ${textPrimary}`}>{currentUser.bank.account}</p>
                         </div>
                          <div className="col-span-2">
                           <p className={`${textMuted} text-[9px] font-black uppercase tracking-widest`}>Chave PIX</p>
-                          <p className={`text-sm font-bold ${textPrimary}`}>{DEFAULT_USER_PROFILE.bank.pixKey}</p>
+                          <p className={`text-sm font-bold ${textPrimary}`}>{currentUser.bank.pixKey || 'Não cadastrada'}</p>
                         </div>
                       </div>
                    </div>
                    <button className="w-full h-16 bg-[#FF6B00] rounded-2xl font-black text-white uppercase italic tracking-widest shadow-xl active:scale-95 transition-transform">
-                      Alterar Dados Bancários
+                      Cadastrar Dados Bancários
                    </button>
                 </div>
               )}
@@ -1940,7 +1795,7 @@ const App: React.FC = () => {
                             <input 
                               type="text" 
                               value={emergencyContact.name}
-                              onChange={e => setEmergencyContact({...emergencyContact, name: e.target.value})}
+                              onChange={e => setEmergencyContact({...emergencyContact,name: e.target.value})}
                               placeholder="Nome do contato"
                               className={`w-full h-12 rounded-xl px-4 ${innerBg} ${textPrimary} outline-none border border-white/5 focus:border-[#FF6B00] text-sm font-bold`}
                             />
@@ -2005,7 +1860,7 @@ const App: React.FC = () => {
                    <div className={`p-6 rounded-[32px] border ${cardBg}`}>
                       <p className={`${textMuted} font-black uppercase text-[10px] tracking-widest mb-4`}>Região de Atuação</p>
                       <div className={`flex items-center justify-between p-4 rounded-xl border border-white/5 ${innerBg}`}>
-                         <span className={`text-sm font-bold ${textPrimary}`}>{DEFAULT_USER_EXTENDED.region}</span>
+                         <span className={`text-sm font-bold ${textPrimary}`}>{currentUser.region}</span>
                          <span className="text-[10px] font-black text-[#FF6B00] uppercase">Alterar</span>
                       </div>
                    </div>
@@ -2016,7 +1871,6 @@ const App: React.FC = () => {
                 </div>
               )}
 
-              {/* NOVA TELA DE SELEÇÃO DE SOM */}
               {settingsView === 'SOUNDS' && (
                 <div className="space-y-4 animate-in slide-in-from-right duration-300">
                    {SOUND_OPTIONS.map((sound) => (
@@ -2069,7 +1923,6 @@ const App: React.FC = () => {
     }
   };
 
-  // Main App Render
   if (!isAuthenticated) {
     return renderAuthScreen();
   }
@@ -2078,17 +1931,13 @@ const App: React.FC = () => {
     <div className={`h-screen w-screen flex flex-col relative overflow-hidden transition-colors duration-300 ${theme === 'dark' ? 'bg-black text-white' : 'bg-zinc-50 text-zinc-900'}`}>
       {currentScreen !== 'FACIAL_VERIFICATION' && (
       <header className={`z-[1002] flex flex-col items-center justify-between backdrop-blur-2xl border-b transition-colors duration-300 ${theme === 'dark' ? 'bg-zinc-950/80 border-white/5' : 'bg-white/80 border-zinc-200'}`}>
-        {/* Top Row */}
         <div className="w-full px-6 py-4 flex items-center justify-between relative h-20">
-            
-            {/* Left: Avatar */}
             <div className="flex items-center justify-center">
                  <div className="w-10 h-10 rounded-full p-0.5 border-2 border-[#FF6B00] shadow-lg shadow-orange-900/20">
-                    <img src={DEFAULT_USER_PROFILE.avatar} alt="Perfil" className="w-full h-full rounded-full object-cover" />
+                    <img src={currentUser.avatar} alt="Perfil" className="w-full h-full rounded-full object-cover" />
                  </div>
             </div>
 
-            {/* Center: Status Button (Absolute) */}
             <div className="absolute left-1/2 top-1/2 transform -translate-x-1/2 -translate-y-1/2">
                 <button onClick={toggleOnlineStatus} className={`h-10 px-6 rounded-full flex items-center space-x-3 transition-all duration-500 shadow-xl ${status === DriverStatus.ONLINE ? 'bg-green-500 ring-4 ring-green-500/20' : innerBg}`}>
                     <div className={`w-2 h-2 rounded-full ${status === DriverStatus.ONLINE ? 'bg-white animate-pulse' : theme === 'dark' ? 'bg-zinc-500' : 'bg-zinc-400'}`}></div>
@@ -2096,7 +1945,6 @@ const App: React.FC = () => {
                 </button>
             </div>
 
-            {/* Right: Notification Bell */}
             <button 
               onClick={handleOpenNotifications}
               className={`w-10 h-10 rounded-2xl flex items-center justify-center transition-all active:scale-95 ${cardBg} border shadow-lg relative`}
@@ -2112,7 +1960,6 @@ const App: React.FC = () => {
             </button>
         </div>
 
-        {/* Bottom Row: GPS Warning */}
         <div className="w-full px-6 pb-4 flex justify-center">
              {!gpsEnabled && (
                 <button 
@@ -2142,7 +1989,6 @@ const App: React.FC = () => {
       </nav>
       )}
 
-      {/* MODAL SOS (BOTTOM SHEET) */}
       {showSOSModal && (
         <div className="absolute inset-0 bg-black/80 z-[6000] flex items-end justify-center backdrop-blur-xl animate-in fade-in duration-300">
            <div className={`w-full bg-[#1E1E1E] rounded-t-[40px] p-6 pb-12 animate-in slide-in-from-bottom duration-500 shadow-2xl border-t border-white/10`}>
@@ -2157,7 +2003,6 @@ const App: React.FC = () => {
               </div>
 
               <div className="grid grid-cols-2 gap-4">
-                 {/* POLÍCIA (190) */}
                  <button 
                   onClick={() => handleSOSAction('police')}
                   className="bg-red-900/20 border border-red-500/30 p-6 rounded-[32px] flex flex-col items-center justify-center space-y-3 active:scale-95 transition-transform group"
@@ -2170,8 +2015,6 @@ const App: React.FC = () => {
                        <p className="text-red-400 font-bold text-sm">Ligar 190</p>
                     </div>
                  </button>
-
-                 {/* SAMU (192) */}
                  <button 
                   onClick={() => handleSOSAction('samu')}
                   className="bg-red-900/20 border border-red-500/30 p-6 rounded-[32px] flex flex-col items-center justify-center space-y-3 active:scale-95 transition-transform group"
@@ -2184,8 +2027,6 @@ const App: React.FC = () => {
                        <p className="text-red-400 font-bold text-sm">Ligar 192</p>
                     </div>
                  </button>
-
-                 {/* Compartilhar Localização */}
                  <button 
                   onClick={() => handleSOSAction('share')}
                   className="bg-zinc-800/50 border border-white/5 p-6 rounded-[32px] flex flex-col items-center justify-center space-y-3 active:scale-95 transition-transform group"
@@ -2198,8 +2039,6 @@ const App: React.FC = () => {
                        <p className="text-zinc-500 font-bold text-[10px]">Enviar Localização</p>
                     </div>
                  </button>
-
-                 {/* Mecânico Próximo */}
                  <button 
                   onClick={() => handleSOSAction('mechanic')}
                   className="bg-zinc-800/50 border border-white/5 p-6 rounded-[32px] flex flex-col items-center justify-center space-y-3 active:scale-95 transition-transform group"
@@ -2217,7 +2056,6 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {/* MODAIS EXISTENTES (Filtros, Sucesso, etc) - Mantidos abaixo */}
       {showPostDeliveryModal && (
         <div className="absolute inset-0 z-[6000] bg-black/90 backdrop-blur-xl flex items-center justify-center p-8">
            <div className="w-full max-w-xs text-center animate-in zoom-in duration-300">
@@ -2249,7 +2087,6 @@ const App: React.FC = () => {
                 <i className="fas fa-times text-lg"></i>
               </button>
             </div>
-            {/* ... Conteúdo dos filtros mantido ... */}
             <div className="space-y-6">
               <div className={`p-5 rounded-[28px] border border-white/5 ${backHome ? 'bg-[#33CCFF]/10 border-[#33CCFF]/30' : innerBg}`}>
                 <div className="flex items-center justify-between mb-3">
@@ -2301,12 +2138,9 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {/* NOVO: Modal de Detalhes da Entrega */}
       {selectedTransaction && selectedTransaction.details && (
         <div className="absolute inset-0 z-[7000] bg-black/90 backdrop-blur-xl flex items-end sm:items-center justify-center p-0 sm:p-6 animate-in fade-in duration-200">
            <div className={`w-full max-w-md h-[90%] sm:h-auto rounded-t-[40px] sm:rounded-[40px] overflow-hidden flex flex-col animate-in slide-in-from-bottom duration-300 border-t border-white/10 shadow-2xl ${cardBg}`}>
-              
-              {/* Header */}
               <div className="p-8 pb-4 flex justify-between items-start shrink-0">
                 <div>
                    <h2 className={`text-3xl font-black italic tracking-tighter ${textPrimary}`}>Detalhes</h2>
@@ -2320,10 +2154,7 @@ const App: React.FC = () => {
                 </button>
               </div>
 
-              {/* Scroll Content */}
               <div className="flex-1 overflow-y-auto p-8 pt-0">
-                
-                {/* Resumo Financeiro e Data */}
                 <div className="flex items-center justify-between mb-8">
                   <div>
                     <p className={`text-4xl font-black text-green-500 italic tracking-tighter`}>+ R$ {selectedTransaction.amount.toFixed(2)}</p>
@@ -2333,7 +2164,6 @@ const App: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Cards de Resumo da Rota */}
                 <div className="grid grid-cols-2 gap-4 mb-8">
                   <div className={`p-4 rounded-[24px] border border-white/5 ${innerBg} flex flex-col items-center justify-center space-y-1`}>
                      <i className="far fa-clock text-[#FF6B00] mb-1"></i>
@@ -2347,15 +2177,12 @@ const App: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Timeline Passo a Passo */}
                 <div>
                   <h3 className={`text-sm font-black uppercase tracking-[0.2em] italic mb-6 ${textPrimary}`}>Histórico da Rota</h3>
                   <div className="relative pl-4 space-y-8 border-l-2 border-dashed border-zinc-700 ml-2">
                     {selectedTransaction.details.timeline.map((event, i) => (
                       <div key={i} className="relative pl-6">
-                        {/* Dot */}
                         <div className={`absolute -left-[9px] top-1 w-4 h-4 rounded-full border-4 border-[#1E1E1E] ${i === 0 ? 'bg-green-500' : 'bg-zinc-600'}`}></div>
-                        
                         <div className="flex flex-col">
                            <span className={`text-xs font-black ${textPrimary}`}>{event.description}</span>
                            <span className={`text-[10px] font-bold ${textMuted}`}>{event.time}</span>
@@ -2364,10 +2191,8 @@ const App: React.FC = () => {
                     ))}
                   </div>
                 </div>
-
               </div>
 
-              {/* Footer Button */}
               <div className={`p-6 border-t border-white/5 ${innerBg}`}>
                  <button onClick={() => setSelectedTransaction(null)} className="w-full h-14 bg-[#FF6B00] rounded-2xl font-black text-white uppercase text-xs tracking-widest shadow-xl">Fechar Detalhes</button>
               </div>
